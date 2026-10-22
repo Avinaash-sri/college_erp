@@ -28,7 +28,7 @@ export default function StudentProfile() {
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-5 border-b border-slate-100 pb-6">
           <div className="w-16 h-16 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-xl shadow-xs">
-            {profile.name.split(' ').map(n => n[0]).join('')}
+            {(profile.name || 'Student').split(' ').filter(Boolean).map(n => n[0]).join('')}
           </div>
           <div className="flex-1">
             <div className="flex items-center space-x-3">

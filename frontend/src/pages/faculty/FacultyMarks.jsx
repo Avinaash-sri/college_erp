@@ -14,12 +14,16 @@ export default function FacultyMarks() {
   useEffect(() => {
     client.get('/faculty/subjects')
       .then((res) => {
-        setSubjects(res.data);
-        if (res.data.length > 0) {
-          setSelectedSubject(res.data[0].id);
+        const subList = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
+        setSubjects(subList);
+        if (subList.length > 0) {
+          setSelectedSubject(subList[0].id);
         }
       })
-      .catch((err) => console.error(err))
+      .catch((err) => {
+        console.error(err);
+        setSubjects([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -32,8 +36,11 @@ export default function FacultyMarks() {
   const fetchMarks = (subId) => {
     setLoading(true);
     client.get(`/faculty/marks?subject_id=${subId}`)
-      .then((res) => setMarksData(res.data))
-      .catch((err) => console.error(err))
+      .then((res) => setMarksData(Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : [])))
+      .catch((err) => {
+        console.error(err);
+        setMarksData([]);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -113,7 +120,7 @@ export default function FacultyMarks() {
           <span className="text-xs text-slate-400">Total Scale: 60 Marks</span>
         </div>
 
-        {marksData.length === 0 ? (
+        {(!marksData || marksData.length === 0) ? (
           <div className="text-center py-12 text-slate-400 text-xs">No students found.</div>
         ) : (
           <div className="overflow-x-auto">
@@ -131,7 +138,7 @@ export default function FacultyMarks() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {marksData.map((row, idx) => (
+                {(Array.isArray(marksData) ? marksData : []).map((row, idx) => (
                   <tr key={row.student_id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-3 px-3 font-mono font-semibold text-slate-800">{row.reg_no}</td>
                     <td className="py-3 px-3 font-bold text-slate-900">{row.name}</td>

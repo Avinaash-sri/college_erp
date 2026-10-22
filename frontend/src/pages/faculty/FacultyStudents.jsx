@@ -16,8 +16,11 @@ export default function FacultyStudents() {
   const fetchStudents = (selectedFilter) => {
     setLoading(true);
     client.get(`/faculty/students?risk_filter=${selectedFilter}`)
-      .then((res) => setStudents(res.data))
-      .catch((err) => console.error(err))
+      .then((res) => setStudents(Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : [])))
+      .catch((err) => {
+        console.error(err);
+        setStudents([]);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -55,7 +58,7 @@ export default function FacultyStudents() {
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
           <div className="border-b border-slate-100 pb-3 mb-4 flex items-center justify-between">
             <span className="text-xs font-bold text-slate-800">
-              Showing {students.length} Students {filter !== 'All' && `(${filter} Standing)`}
+              Showing {(Array.isArray(students) ? students : []).length} Students {filter !== 'All' && `(${filter} Standing)`}
             </span>
             <span className="text-xs text-slate-400">Semester 6 &bull; Section A</span>
           </div>
@@ -110,7 +113,7 @@ export default function FacultyStudents() {
                       </td>
                       <td className="py-3.5 px-3 text-center">
                         <div className="flex justify-center gap-1">
-                          {st.marks.map((m, idx) => (
+                          {(Array.isArray(st.marks) ? st.marks : []).map((m, idx) => (
                             <span key={idx} className="font-mono text-[10px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded" title={`${m.subject_code}: ${m.total} pts (${m.grade})`}>
                               {m.grade}
                             </span>

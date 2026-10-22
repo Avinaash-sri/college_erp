@@ -21,8 +21,11 @@ export default function StudentComplaints() {
 
   const fetchComplaints = () => {
     client.get('/students/me/complaints')
-      .then((res) => setComplaints(res.data))
-      .catch((e) => console.error(e))
+      .then((res) => setComplaints(Array.isArray(res.data) ? res.data : []))
+      .catch((e) => {
+        console.error(e);
+        setComplaints([]);
+      })
       .finally(() => setLoading(false));
   };
 
@@ -80,13 +83,13 @@ export default function StudentComplaints() {
 
       {/* Complaints List */}
       <div className="space-y-4">
-        {complaints.length === 0 ? (
+        {(!complaints || complaints.length === 0) ? (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400 text-xs">
             <MessageSquare className="w-8 h-8 mx-auto text-slate-300 mb-2" />
             <p>You have no active or historical grievances on record.</p>
           </div>
         ) : (
-          complaints.map((c) => (
+          (Array.isArray(complaints) ? complaints : []).map((c) => (
             <div key={c.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div className="flex items-center space-x-2.5">
@@ -99,7 +102,7 @@ export default function StudentComplaints() {
                   <span className="text-[11px] text-slate-400">
                     Submitted: {new Date(c.created_at).toLocaleDateString()}
                   </span>
-                  <StatusBadge status={c.status.toUpperCase()} />
+                  <StatusBadge status={(c.status || 'Pending').toUpperCase()} />
                 </div>
               </div>
 

@@ -14,14 +14,17 @@ export default function StudentExams() {
       client.get('/students/me/marks')
     ])
       .then(([examsRes, marksRes]) => {
-        setExams(examsRes.data);
-        setMarks(marksRes.data);
+        setExams(Array.isArray(examsRes.data) ? examsRes.data : (Array.isArray(examsRes.data?.data) ? examsRes.data.data : []));
+        setMarks(Array.isArray(marksRes.data) ? marksRes.data : (Array.isArray(marksRes.data?.data) ? marksRes.data.data : []));
       })
       .catch((err) => console.error(err))
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSpinner message="Loading examination schedules and marks..." />;
+
+  const safeExams = Array.isArray(exams) ? exams : [];
+  const safeMarks = Array.isArray(marks) ? marks : [];
 
   return (
     <div className="space-y-6">
@@ -35,15 +38,15 @@ export default function StudentExams() {
         <div className="border-b border-slate-100 pb-3 mb-4 flex items-center justify-between">
           <h2 className="text-sm font-bold text-slate-900">Upcoming Examination Schedule</h2>
           <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700">
-            {exams.length} Exams Scheduled
+            {safeExams.length} Exams Scheduled
           </span>
         </div>
 
-        {exams.length === 0 ? (
+        {safeExams.length === 0 ? (
           <div className="text-center py-8 text-slate-400 text-xs">No upcoming examinations.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {exams.map((exam) => (
+            {safeExams.map((exam) => (
               <div key={exam.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
@@ -97,7 +100,7 @@ export default function StudentExams() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {marks.map((m) => (
+              {safeMarks.map((m) => (
                 <tr key={m.id} className="hover:bg-slate-50/60 transition-colors">
                   <td className="py-3 px-3">
                     <div className="font-bold text-slate-900">{m.subject_name}</div>

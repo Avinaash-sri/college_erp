@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import client from '../api/client';
+import { supabase, isSupabaseConfigured, signOut } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
@@ -8,27 +9,44 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 1. Check local storage session
     const savedToken = localStorage.getItem('erp_token');
     const savedUser = localStorage.getItem('erp_user');
+
     if (savedToken && savedUser) {
       try {
         setUser(JSON.parse(savedUser));
-        // Verify with /auth/me in background
-        client.get('/auth/me')
-          .then((res) => {
-            setUser(res.data);
-            localStorage.setItem('erp_user', JSON.stringify(res.data));
-          })
-          .catch(() => {
-            localStorage.removeItem('erp_token');
-            localStorage.removeItem('erp_user');
-            setUser(null);
-          })
-          .finally(() => setLoading(false));
       } catch (e) {
         setUser(null);
-        setLoading(false);
       }
+    }
+
+    // 2. If Supabase configured, subscribe to auth state changes
+    if (isSupabaseConfigured) {
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          const role = session.user.user_metadata?.role || 'student';
+          const uData = {
+            id: session.user.id,
+            email: session.user.email,
+            role,
+            name: session.user.user_metadata?.name || session.user.email.split('@')[0],
+            access_token: session.access_token,
+          };
+          setUser(uData);
+          localStorage.setItem('erp_token', session.access_token);
+          localStorage.setItem('erp_user', JSON.stringify(uData));
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          localStorage.removeItem('erp_token');
+          localStorage.removeItem('erp_user');
+        }
+      });
+
+      setLoading(false);
+      return () => {
+        authListener?.subscription?.unsubscribe();
+      };
     } else {
       setLoading(false);
     }
@@ -43,7 +61,10 @@ export const AuthProvider = ({ children }) => {
     return userData;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await signOut();
+    } catch (e) {}
     localStorage.removeItem('erp_token');
     localStorage.removeItem('erp_user');
     setUser(null);

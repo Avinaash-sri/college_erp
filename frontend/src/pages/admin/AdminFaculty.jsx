@@ -29,10 +29,12 @@ export default function AdminFaculty() {
         client.get('/admin/faculty'),
         client.get('/admin/departments')
       ]);
-      setFaculty(facRes.data);
-      setDepartments(deptRes.data);
-      if (deptRes.data.length > 0 && !formData.department_id) {
-        setFormData(prev => ({ ...prev, department_id: deptRes.data[0].id }));
+      const facList = Array.isArray(facRes.data) ? facRes.data : (Array.isArray(facRes.data?.data) ? facRes.data.data : []);
+      const deptList = Array.isArray(deptRes.data) ? deptRes.data : (Array.isArray(deptRes.data?.data) ? deptRes.data.data : []);
+      setFaculty(facList);
+      setDepartments(deptList);
+      if (deptList.length > 0 && !formData.department_id) {
+        setFormData(prev => ({ ...prev, department_id: deptList[0].id }));
       }
     } catch (e) {
       console.error(e);

@@ -357,32 +357,3 @@ def submit_student_complaint(
     db.commit()
     return {"status": "success", "message": "Grievance ticket submitted successfully", "id": complaint.id}
 
-# Student Assignments & Resources
-@router.get("/me/assignments")
-def get_student_assignments(student: models.Student = Depends(get_logged_in_student), db: Session = Depends(get_db)):
-    # Find assignments for subjects in student's department and semester
-    subjects = db.query(models.Subject).filter(
-        models.Subject.department_id == student.department_id,
-        models.Subject.semester == student.semester
-    ).all()
-    sub_ids = [s.id for s in subjects]
-
-    assignments = db.query(models.Assignment).filter(
-        models.Assignment.subject_id.in_(sub_ids)
-    ).order_by(models.Assignment.due_date.asc()).all()
-
-    return [
-        {
-            "id": a.id,
-            "subject_id": a.subject_id,
-            "subject_code": a.subject.code if a.subject else "",
-            "subject_name": a.subject.name if a.subject else "",
-            "title": a.title,
-            "description": a.description,
-            "due_date": a.due_date.isoformat(),
-            "max_marks": a.max_marks,
-            "resource_url": a.resource_url,
-            "created_at": a.created_at.isoformat()
-        }
-        for a in assignments
-    ]

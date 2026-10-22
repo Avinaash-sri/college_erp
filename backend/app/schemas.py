@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Any, Dict
 from datetime import date, datetime
 
 # Token & Auth
@@ -373,26 +373,279 @@ class ComplaintResponse(BaseModel):
 # Assignments & Resources
 class AssignmentCreate(BaseModel):
     subject_id: int
+    department_id: Optional[int] = None
+    semester: int = 6
+    section: str = "A"
     title: str
     description: str
     due_date: date
+    due_time: str = "23:59"
     max_marks: float = 10.0
     resource_url: Optional[str] = None
+    allowed_file_types: str = "pdf,docx,zip,txt"
+    max_file_size_mb: int = 10
+    submission_format: str = "both"  # 'file', 'drive_link', 'both'
+    allow_resubmission: bool = True
+    allow_late: bool = True
+    reminder_interval_minutes: int = 60
+    status: str = "published"
+    excluded_student_ids: List[int] = []
+
+class AssignmentUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    due_date: Optional[date] = None
+    due_time: Optional[str] = None
+    max_marks: Optional[float] = None
+    allowed_file_types: Optional[str] = None
+    max_file_size_mb: Optional[int] = None
+    submission_format: Optional[str] = None
+    allow_resubmission: Optional[bool] = None
+    allow_late: Optional[bool] = None
+    status: Optional[str] = None
+    reminder_interval_minutes: Optional[int] = None
+    excluded_student_ids: Optional[List[int]] = None
 
 class AssignmentResponse(BaseModel):
     id: int
     subject_id: int
     subject_name: Optional[str] = None
     subject_code: Optional[str] = None
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    semester: int = 6
+    section: str = "A"
     title: str
     description: str
     due_date: date
-    max_marks: float
+    due_time: str = "23:59"
+    max_marks: float = 10.0
     resource_url: Optional[str] = None
+    allowed_file_types: str = "pdf,docx,zip,txt"
+    max_file_size_mb: int = 10
+    submission_format: str = "both"
+    allow_resubmission: bool = True
+    allow_late: bool = True
+    status: str = "published"
+    reminder_interval_minutes: int = 60
     faculty_name: Optional[str] = None
     created_at: datetime
+    my_submission: Optional[Dict[str, Any]] = None
+    total_eligible: Optional[int] = 0
+    submitted_count: Optional[int] = 0
+    pending_count: Optional[int] = 0
+    graded_count: Optional[int] = 0
     class Config:
         from_attributes = True
+
+class AssignmentRosterItem(BaseModel):
+    student_id: int
+    reg_no: str
+    name: str
+    email: str
+    status: str  # 'Pending — Not Submitted', 'Submitted', 'Late', 'Graded', 'Returned for Resubmission', 'Excluded'
+    is_excluded: bool = False
+    submitted_at: Optional[datetime] = None
+    submission_type: Optional[str] = None
+    file_name: Optional[str] = None
+    file_path: Optional[str] = None
+    file_size: Optional[int] = None
+    drive_link: Optional[str] = None
+    marks_obtained: Optional[float] = None
+    faculty_feedback: Optional[str] = None
+    graded_at: Optional[datetime] = None
+    graded_by_name: Optional[str] = None
+    last_reminder_sent_at: Optional[datetime] = None
+    next_reminder_at: Optional[datetime] = None
+    reminder_count: int = 0
+    version: int = 1
+
+class AssignmentGradeRequest(BaseModel):
+    marks_obtained: float
+    faculty_feedback: Optional[str] = None
+    return_for_resubmission: bool = False
+
+class DriveSubmissionRequest(BaseModel):
+    drive_link: str
+    confirmed_access_granted: bool = True
+
+class ReminderTriggerResponse(BaseModel):
+    status: str
+    assignment_id: int
+    sent_count: int
+    failed_count: int
+    skipped_count: int
+    next_run: Optional[str] = None
+    details: List[Dict[str, Any]] = []
+
+# Quizzes
+class QuizQuestionCreate(BaseModel):
+    question_text: str
+    question_type: str = "mcq"  # 'mcq', 'short_answer'
+    marks: float = 1.0
+    order: int = 1
+    options: Optional[List[Dict[str, Any]]] = None  # [{"id": "A", "text": "Option A"}, ...]
+    correct_answer: str
+    explanation: Optional[str] = None
+
+class QuizQuestionResponse(BaseModel):
+    id: int
+    quiz_id: int
+    question_text: str
+    question_type: str
+    marks: float
+    order: int
+    options: Optional[List[Dict[str, Any]]] = None
+    correct_answer: Optional[str] = None  # Redacted during taking
+    explanation: Optional[str] = None  # Redacted during taking
+    class Config:
+        from_attributes = True
+
+class QuizCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    subject_id: int
+    department_id: int
+    academic_year: str = "2025-2026"
+    semester: int = 6
+    section: str = "A"
+    duration_minutes: int = 30
+    deadline: datetime
+    start_time: Optional[datetime] = None
+    status: str = "draft"  # 'draft', 'published', 'closed'
+    allow_multiple_attempts: bool = False
+    max_attempts: int = 1
+    excluded_student_ids: List[int] = []
+    questions: List[QuizQuestionCreate] = []
+
+class QuizUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    subject_id: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    deadline: Optional[datetime] = None
+    start_time: Optional[datetime] = None
+    status: Optional[str] = None
+    results_published: Optional[bool] = None
+    allow_multiple_attempts: Optional[bool] = None
+    max_attempts: Optional[int] = None
+    excluded_student_ids: Optional[List[int]] = None
+    questions: Optional[List[QuizQuestionCreate]] = None
+
+class QuizResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    subject_id: int
+    subject_name: Optional[str] = None
+    subject_code: Optional[str] = None
+    faculty_id: int
+    faculty_name: Optional[str] = None
+    department_id: int
+    department_name: Optional[str] = None
+    semester: int
+    section: str
+    duration_minutes: int
+    total_marks: float
+    deadline: datetime
+    start_time: Optional[datetime] = None
+    status: str
+    results_published: bool
+    allow_multiple_attempts: bool
+    max_attempts: int
+    created_at: datetime
+    question_count: int = 0
+    eligible_count: int = 0
+    submitted_count: int = 0
+    my_attempt: Optional[Dict[str, Any]] = None
+    class Config:
+        from_attributes = True
+
+class QuizSubmitRequest(BaseModel):
+    answers: List[Dict[str, Any]]  # [{"question_id": 1, "selected_answer": "A"}, ...]
+
+# Announcements & Enhanced Notifications
+class AnnouncementCreate(BaseModel):
+    title: str
+    description: str
+    category: str = "General Announcement"
+    poster_url: Optional[str] = None
+    event_date: Optional[date] = None
+    registration_url: Optional[str] = None
+    audience_type: str = "all"  # 'all', 'department', 'semester', 'section'
+    target_department_id: Optional[int] = None
+    target_semester: Optional[int] = None
+    target_section: Optional[str] = None
+    status: str = "published"
+
+class AnnouncementUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    poster_url: Optional[str] = None
+    event_date: Optional[date] = None
+    registration_url: Optional[str] = None
+    status: Optional[str] = None
+
+class AnnouncementResponse(BaseModel):
+    id: int
+    title: str
+    description: str
+    category: str
+    poster_url: Optional[str] = None
+    event_date: Optional[date] = None
+    registration_url: Optional[str] = None
+    audience_type: str
+    target_department_id: Optional[int] = None
+    target_department_name: Optional[str] = None
+    target_semester: Optional[int] = None
+    target_section: Optional[str] = None
+    status: str
+    created_by_name: Optional[str] = None
+    created_at: datetime
+    published_at: datetime
+    class Config:
+        from_attributes = True
+
+class NotificationEnhancedResponse(BaseModel):
+    id: int
+    title: str
+    message: str
+    type: str
+    link_url: Optional[str] = None
+    announcement_id: Optional[int] = None
+    announcement: Optional[AnnouncementResponse] = None
+    is_read: bool
+    created_at: datetime
+    read_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+# Notes AI Assistant
+class DocumentUploadResponse(BaseModel):
+    id: int
+    filename: str
+    file_type: str
+    file_size: int
+    extracted_length: int
+    total_chunks: int
+    processing_status: str
+    created_at: datetime
+    summary: Optional[str] = None
+
+class DocumentActionRequest(BaseModel):
+    action: str  # 'summarise_full', 'summarise_topic', 'explain_english', 'explain_tanglish', 'qa', 'generate_mcqs', 'key_concepts', 'revision_checklist'
+    query: Optional[str] = None
+    topic: Optional[str] = None
+
+class DocumentActionResponse(BaseModel):
+    action: str
+    response: str
+    result: Optional[str] = None
+    sources: List[Dict[str, Any]] = []
+    document_id: int
+    document_name: str
+    engine: str = "Gemini Flash Grounded Engine"
 
 # AI Chat
 class ChatMessage(BaseModel):

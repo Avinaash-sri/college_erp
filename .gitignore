@@ -30,3 +30,9 @@ frontend/.env
 .idea/
 *.swp
 *.swo
+
+# Runtime storage
+backend/storage/assignments/*
+backend/app/storage/assignments/*
+storage/
+

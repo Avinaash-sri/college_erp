@@ -32,16 +32,20 @@ export default function AdminTimetable() {
         client.get('/admin/faculty'),
         client.get('/admin/departments')
       ]);
-      setEntries(ttRes.data);
-      setSubjects(subRes.data);
-      setFacultyList(facRes.data);
-      setDepartments(deptRes.data);
-      if (subRes.data.length > 0 && !formData.subject_id) {
+      const ttList = Array.isArray(ttRes.data) ? ttRes.data : [];
+      const subList = Array.isArray(subRes.data) ? subRes.data : [];
+      const facList = Array.isArray(facRes.data) ? facRes.data : [];
+      const deptList = Array.isArray(deptRes.data) ? deptRes.data : [];
+      setEntries(ttList);
+      setSubjects(subList);
+      setFacultyList(facList);
+      setDepartments(deptList);
+      if (subList.length > 0 && !formData.subject_id) {
         setFormData(prev => ({
           ...prev,
-          subject_id: subRes.data[0].id,
-          faculty_id: facRes.data[0]?.id || 1,
-          department_id: deptRes.data[0]?.id || 1
+          subject_id: subList[0].id,
+          faculty_id: facList[0]?.id || 1,
+          department_id: deptList[0]?.id || 1
         }));
       }
     } catch (e) {

@@ -34,10 +34,12 @@ export default function AdminStudents() {
         client.get('/admin/students'),
         client.get('/admin/departments')
       ]);
-      setStudents(stRes.data);
-      setDepartments(deptRes.data);
-      if (deptRes.data.length > 0 && !formData.department_id) {
-        setFormData(prev => ({ ...prev, department_id: deptRes.data[0].id }));
+      const stList = Array.isArray(stRes.data) ? stRes.data : (Array.isArray(stRes.data?.data) ? stRes.data.data : []);
+      const deptList = Array.isArray(deptRes.data) ? deptRes.data : (Array.isArray(deptRes.data?.data) ? deptRes.data.data : []);
+      setStudents(stList);
+      setDepartments(deptList);
+      if (deptList.length > 0 && !formData.department_id) {
+        setFormData(prev => ({ ...prev, department_id: deptList[0].id }));
       }
     } catch (e) {
       console.error(e);

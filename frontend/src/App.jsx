@@ -18,9 +18,12 @@ import StudentNotifications from './pages/student/StudentNotifications';
 import StudentProfile from './pages/student/StudentProfile';
 import AIAssistant from './pages/student/AIAssistant';
 import StudentComplaints from './pages/student/StudentComplaints';
+import StudentQuizzes from './pages/student/StudentQuizzes';
+import StudentAssignments from './pages/student/StudentAssignments';
 
 // Faculty Pages
 import FacultyDashboard from './pages/faculty/FacultyDashboard';
+import FacultySubjects from './pages/faculty/FacultySubjects';
 import FacultyAttendance from './pages/faculty/FacultyAttendance';
 import FacultyStudents from './pages/faculty/FacultyStudents';
 import FacultyMarks from './pages/faculty/FacultyMarks';
@@ -28,6 +31,8 @@ import FacultyTimetable from './pages/faculty/FacultyTimetable';
 import FacultyProfile from './pages/faculty/FacultyProfile';
 import FacultyAnnouncements from './pages/faculty/FacultyAnnouncements';
 import FacultyComplaints from './pages/faculty/FacultyComplaints';
+import FacultyQuizzes from './pages/faculty/FacultyQuizzes';
+import FacultyAssignments from './pages/faculty/FacultyAssignments';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -40,6 +45,7 @@ import AdminExams from './pages/admin/AdminExams';
 import AdminFees from './pages/admin/AdminFees';
 import AdminPlacements from './pages/admin/AdminPlacements';
 import AdminNotifications from './pages/admin/AdminNotifications';
+import AdminAnnouncements from './pages/admin/AdminAnnouncements';
 import AdminAttendanceAlerts from './pages/admin/AdminAttendanceAlerts';
 import AdminComplaints from './pages/admin/AdminComplaints';
 import AdminSettings from './pages/admin/AdminSettings';
@@ -75,9 +81,55 @@ function RoleHomeRedirect() {
   return <Navigate to="/student/dashboard" replace />;
 }
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('App ErrorBoundary caught:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-4 font-bold text-xl">
+              !
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 mb-2">Portal Display Protected</h2>
+            <p className="text-xs text-slate-500 mb-6 leading-relaxed">
+              A component encountered an issue rendering data: {this.state.error?.message || 'Unexpected state'}.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => { localStorage.clear(); window.location.href = '/login'; }}
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold py-2.5 rounded-lg transition-colors"
+              >
+                Reset &amp; Sign In
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="flex-1 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors"
+              >
+                Reload Page
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
-    <Routes>
+    <ErrorBoundary>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
 
       {/* Root redirect based on role */}
@@ -157,6 +209,14 @@ export default function App() {
           }
         />
         <Route
+          path="/student/notes"
+          element={
+            <ProtectedRoute allowedRoles={['student']}>
+              <AIAssistant />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/student/ai-assistant"
           element={
             <ProtectedRoute allowedRoles={['student']}>
@@ -170,6 +230,22 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['student']}>
               <StudentComplaints />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/student/quizzes"
+          element={
+            <ProtectedRoute allowedRoles={['student']}>
+              <StudentQuizzes />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/student/assignments"
+          element={
+            <ProtectedRoute allowedRoles={['student']}>
+              <StudentAssignments />
             </ProtectedRoute>
           }
         />
@@ -227,7 +303,7 @@ export default function App() {
           path="/faculty/subjects"
           element={
             <ProtectedRoute allowedRoles={['faculty']}>
-              <FacultyStudents />
+              <FacultySubjects />
             </ProtectedRoute>
           }
         />
@@ -244,6 +320,22 @@ export default function App() {
           element={
             <ProtectedRoute allowedRoles={['faculty']}>
               <FacultyComplaints />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/faculty/quizzes"
+          element={
+            <ProtectedRoute allowedRoles={['faculty']}>
+              <FacultyQuizzes />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/faculty/assignments"
+          element={
+            <ProtectedRoute allowedRoles={['faculty']}>
+              <FacultyAssignments />
             </ProtectedRoute>
           }
         />
@@ -330,6 +422,14 @@ export default function App() {
           }
         />
         <Route
+          path="/admin/announcements"
+          element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AdminAnnouncements />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/admin/attendance-alerts"
           element={
             <ProtectedRoute allowedRoles={['admin']}>
@@ -358,5 +458,6 @@ export default function App() {
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ErrorBoundary>
   );
 }

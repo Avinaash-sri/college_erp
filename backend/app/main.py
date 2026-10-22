@@ -7,22 +7,30 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
 from app.seed_data import seed_database
-from app.routers import auth, students, faculty, admin, chat
+from app.migrate_db import apply_database_migrations
+from app.assignment_scheduler import start_assignment_scheduler, stop_assignment_scheduler
+from app.routers import auth, students, faculty, admin, chat, quizzes, assignments, announcements, notes_ai
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("erp_main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize tables
-    logger.info("Verifying and initializing database tables...")
+    # Startup: Initialize and upgrade tables
+    logger.info("Verifying and applying database schema migrations...")
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database schema verified successfully.")
+        apply_database_migrations(engine)
+        logger.info("Database schema migrations verified successfully.")
     except Exception as e:
-        logger.error(f"Error initializing database schema: {e}")
+        logger.error(f"Error applying database migrations: {e}")
         if settings.ENVIRONMENT.lower() == "production":
             raise
+
+    # Start persistent assignment reminder background scheduler
+    try:
+        start_assignment_scheduler()
+    except Exception as e:
+        logger.error(f"Failed to start assignment reminder scheduler: {e}")
 
     # Only seed demo data if explicitly requested via SEED_DEMO_DATA=True in development
     if settings.SEED_DEMO_DATA or (settings.ENVIRONMENT.lower() == "development" and not settings.DATABASE_URL):
@@ -30,6 +38,8 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             seed_database(db)
+            from app.seed_enhancements import seed_enhancement_data
+            seed_enhancement_data(db)
         except Exception as e:
             logger.warning(f"Demo seeding skipped or already present: {e}")
         finally:
@@ -41,6 +51,10 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Application shutting down...")
+    try:
+        stop_assignment_scheduler()
+    except Exception:
+        pass
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -73,6 +87,10 @@ app.include_router(students.router)
 app.include_router(faculty.router)
 app.include_router(admin.router)
 app.include_router(chat.router)
+app.include_router(quizzes.router)
+app.include_router(assignments.router)
+app.include_router(announcements.router)
+app.include_router(notes_ai.router)
 
 @app.get("/")
 def root():

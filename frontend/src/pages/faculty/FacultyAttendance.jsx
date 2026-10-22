@@ -17,12 +17,16 @@ export default function FacultyAttendance() {
   useEffect(() => {
     client.get('/faculty/subjects')
       .then((res) => {
-        setSubjects(res.data);
-        if (res.data.length > 0) {
-          setSelectedSubject(res.data[0].id);
+        const subList = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : []);
+        setSubjects(subList);
+        if (subList.length > 0) {
+          setSelectedSubject(subList[0].id);
         }
       })
-      .catch((err) => console.error(err))
+      .catch((err) => {
+        console.error(err);
+        setSubjects([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -37,15 +41,23 @@ export default function FacultyAttendance() {
     setFeedback(null);
     client.get(`/faculty/attendance/session?subject_id=${subId}&date=${dateVal}`)
       .then((res) => {
-        setStudents(res.data.students);
+        const stList = Array.isArray(res.data?.students)
+          ? res.data.students
+          : Array.isArray(res.data)
+          ? res.data
+          : [];
+        setStudents(stList);
       })
-      .catch((err) => console.error(err))
+      .catch((err) => {
+        console.error(err);
+        setStudents([]);
+      })
       .finally(() => setLoading(false));
   };
 
   const handleStatusChange = (studentId, newStatus) => {
     setStudents((prev) =>
-      prev.map((s) => (s.student_id === studentId ? { ...s, status: newStatus } : s))
+      (Array.isArray(prev) ? prev : []).map((s) => (s.student_id === studentId ? { ...s, status: newStatus } : s))
     );
   };
 
@@ -87,8 +99,9 @@ export default function FacultyAttendance() {
 
   if (loading && subjects.length === 0) return <LoadingSpinner message="Loading course roster..." />;
 
-  const presentCount = students.filter((s) => s.status === 'Present').length;
-  const absentCount = students.filter((s) => s.status === 'Absent').length;
+  const safeStudents = Array.isArray(students) ? students : [];
+  const presentCount = safeStudents.filter((s) => s.status === 'Present').length;
+  const absentCount = safeStudents.filter((s) => s.status === 'Absent').length;
 
   return (
     <div className="space-y-6">
@@ -187,7 +200,7 @@ export default function FacultyAttendance() {
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
         <div className="border-b border-slate-100 pb-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center space-x-4">
-            <span className="text-xs font-bold text-slate-700">Roster ({students.length} Students)</span>
+            <span className="text-xs font-bold text-slate-700">Roster ({safeStudents.length} Students)</span>
             <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
               Present: {presentCount}
             </span>
@@ -214,7 +227,7 @@ export default function FacultyAttendance() {
           </div>
         </div>
 
-        {students.length === 0 ? (
+        {safeStudents.length === 0 ? (
           <div className="text-center py-12 text-slate-400 text-xs">No students found in this course section.</div>
         ) : (
           <div className="overflow-x-auto">
@@ -229,7 +242,7 @@ export default function FacultyAttendance() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {students.map((st) => {
+                {safeStudents.map((st) => {
                   const isPresent = st.status === 'Present';
                   return (
                     <tr key={st.student_id} className="hover:bg-slate-50/60 transition-colors">

@@ -9,12 +9,17 @@ export default function StudentPlacements() {
 
   useEffect(() => {
     client.get('/students/me/placements')
-      .then((res) => setPlacements(res.data))
-      .catch((err) => console.error(err))
+      .then((res) => setPlacements(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => {
+        console.error(err);
+        setPlacements([]);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSpinner message="Fetching campus placement opportunities..." />;
+
+  const safePlacements = Array.isArray(placements) ? placements : [];
 
   return (
     <div className="space-y-6">
@@ -23,8 +28,15 @@ export default function StudentPlacements() {
         <p className="text-xs text-slate-500 mt-0.5">Active on-campus recruitment drives, corporate job profiles, and eligibility criteria</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {placements.map((p) => (
+      {safePlacements.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-400 text-xs">
+          <Briefcase className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="font-semibold text-slate-600">No active placement drives currently scheduled.</p>
+          <p className="text-[11px] text-slate-400 mt-1">Check back soon for upcoming corporate drives.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {safePlacements.map((p) => (
           <div key={p.id} className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
             <div>
               <div className="flex items-start justify-between">
@@ -69,6 +81,7 @@ export default function StudentPlacements() {
           </div>
         ))}
       </div>
+    )}
     </div>
   );
 }

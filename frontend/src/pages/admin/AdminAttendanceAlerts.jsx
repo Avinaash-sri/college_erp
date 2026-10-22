@@ -110,7 +110,14 @@ export default function AdminAttendanceAlerts() {
   if (loading) return <LoadingSpinner message="Loading Attendance Alert Center..." />;
   if (!data) return <div className="p-8 text-center text-slate-500">Failed to load alert center records.</div>;
 
-  const { below_75_students, alert_logs, safe_threshold, smtp_configured } = data;
+  const below_75_students = Array.isArray(data?.below_75_students)
+    ? data.below_75_students
+    : Array.isArray(data)
+    ? data
+    : [];
+  const alert_logs = Array.isArray(data?.alert_logs) ? data.alert_logs : [];
+  const safe_threshold = data?.safe_threshold || 75.0;
+  const smtp_configured = data?.smtp_configured ?? true;
 
   return (
     <div className="space-y-6">

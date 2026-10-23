@@ -159,6 +159,516 @@ function getLoggedInStudent() {
   return found || stateStudents[40];
 }
 
+// Generate realistic, consistent period-by-period classroom attendance logs for students
+function getStudentPeriodAttendanceRecords(student) {
+  const isWarning = student?.risk_status === 'Warning';
+  const isHighRisk = student?.risk_status === 'High Risk';
+  const studentId = student?.id || 41;
+
+  const dates = [
+    { date: '2026-10-23', label: 'Today (Wed, Oct 23)', dayName: 'Wednesday' },
+    { date: '2026-10-22', label: 'Yesterday (Tue, Oct 22)', dayName: 'Tuesday' },
+    { date: '2026-10-21', label: 'Mon, Oct 21', dayName: 'Monday' },
+    { date: '2026-10-20', label: 'Fri, Oct 18', dayName: 'Friday' },
+    { date: '2026-10-17', label: 'Thu, Oct 17', dayName: 'Thursday' }
+  ];
+
+  const periodsTemplate = [
+    { period_number: 1, period_time: '09:00 - 10:00 AM', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', faculty_name: 'Dr. Kavitha Raman', room: 'Hall 302', subject_id: 7 },
+    { period_number: 2, period_time: '10:15 - 11:15 AM', subject_code: 'CS602', subject_name: 'Artificial Intelligence & Machine Learning', faculty_name: 'Dr. Rajesh Kulkarni', room: 'AI Lab 1', subject_id: 8 },
+    { period_number: 3, period_time: '11:30 - 12:30 PM', subject_code: 'CS603', subject_name: 'Database Engineering & Distributed Systems', faculty_name: 'Prof. Suresh Kumar', room: 'Hall 304', subject_id: 9 },
+    { period_number: 4, period_time: '01:30 - 02:30 PM', subject_code: 'CS604', subject_name: 'Cloud Computing & DevOps Laboratory', faculty_name: 'Dr. Kavitha Raman', room: 'Lab Block 3', subject_id: 10 },
+    { period_number: 5, period_time: '02:30 - 03:30 PM', subject_code: 'CS605', subject_name: 'Web Technology & Microservices', faculty_name: 'Dr. P. Sangeetha', room: 'Lab Block 4', subject_id: 11 }
+  ];
+
+  const records = [];
+  dates.forEach((d) => {
+    periodsTemplate.forEach((p) => {
+      // Dynamic check for attendance session explicitly saved by faculty
+      const sessionKey = `${d.date}_${p.subject_id}`;
+      const savedStatus = (stateAttendanceSessions[sessionKey] || {})[studentId];
+
+      let status = 'Present';
+      if (savedStatus) {
+        status = savedStatus;
+      } else {
+        if (isHighRisk) {
+          if (
+            (d.date === '2026-10-23' && p.period_number === 2) ||
+            (d.date === '2026-10-22' && (p.period_number === 1 || p.period_number === 3)) ||
+            (d.date === '2026-10-21' && p.period_number === 4) ||
+            (d.date === '2026-10-20' && (p.period_number === 2 || p.period_number === 5)) ||
+            (d.date === '2026-10-17' && p.period_number === 3)
+          ) {
+            status = 'Absent';
+          }
+        } else if (isWarning) {
+          if (
+            (d.date === '2026-10-23' && p.period_number === 4) ||
+            (d.date === '2026-10-22' && p.period_number === 3) ||
+            (d.date === '2026-10-21' && p.period_number === 2) ||
+            (d.date === '2026-10-20' && p.period_number === 1)
+          ) {
+            status = 'Absent';
+          }
+        } else {
+          // Safe student (Arun Kumar ~84%)
+          if (d.date === '2026-10-22' && p.period_number === 3) {
+            status = 'Absent';
+          }
+          if (d.date === '2026-10-20' && p.period_number === 2) {
+            status = 'Absent';
+          }
+        }
+      }
+
+      records.push({
+        id: `${d.date}_P${p.period_number}`,
+        date: d.date,
+        date_label: d.label,
+        day_name: d.dayName,
+        period_number: p.period_number,
+        period_time: p.period_time,
+        subject_code: p.subject_code,
+        subject_name: p.subject_name,
+        faculty_name: p.faculty_name,
+        room: p.room,
+        status,
+        marked_at: `${p.period_time.split(' - ')[0]} (${d.dayName})`,
+        verification_method: status === 'Present' ? 'Biometric & Faculty Roster Verified' : 'Unexcused Class Absence',
+        remarks: status === 'Present' ? 'In Attendance' : 'Missed roll call / No approved OD'
+      });
+    });
+  });
+
+  return records;
+}
+
+// Master comprehensive AI answering intelligence for all student, faculty, and academic queries
+function generateComprehensiveAIAnswer(rawQuery, student, role = 'student', docName = null) {
+  const query = (rawQuery || '').trim();
+  const q = query.toLowerCase();
+  let reply = '';
+  let suggestions = [];
+  const st = student || stateStudents[40];
+
+  // =========================================================================
+  // 1. FACULTY ROLE SPECIFIC ANSWERS
+  // =========================================================================
+  if (role === 'faculty') {
+    const cseStudents = stateStudents.filter((s) => s.department_id === 3);
+    const atRisk = cseStudents.filter((s) => s.risk_status === 'High Risk' || s.overall_attendance < 75);
+
+    if (q.includes('class') || q.includes('timetable') || q.includes('today') || q.includes('schedule')) {
+      reply = `📋 **Today's Teaching Schedule (Dr. Kavitha Raman):**\n\n- **09:00 - 10:00 AM**: CS601 Design and Analysis of Algorithms (Hall 302, Section A)\n- **10:15 - 11:15 AM**: CS602 Artificial Intelligence & Machine Learning (AI Lab 1, Section A)\n- **01:30 - 03:30 PM**: CS604 Cloud Computing & DevOps Laboratory (Lab Block 3)`;
+      suggestions = ['How many students are at risk in CSE?', 'Show assignment submission status', 'When is the next CIA exam?'];
+    } else if (q.includes('risk') || q.includes('attendance') || q.includes('below 75') || q.includes('defaulter')) {
+      reply = `⚠️ **Attendance Risk Summary (Department of CSE, Semester 6):**\n\nThere are **${atRisk.length} students** currently below the mandatory 75% threshold in your department.\n\n` +
+        atRisk.slice(0, 5).map(s => `- **${s.name}** (${s.reg_no}): **${s.overall_attendance}%** [${s.risk_status}] &bull; Parent: ${s.parent_email}`).join('\n') +
+        `\n\n*Note: Automated parent email alerts are active and logged under Admin Attendance Alert Center.*`;
+      suggestions = ['What classes do I have today?', 'Show assignment submission status', 'List scheduled exams'];
+    } else if (q.includes('assignment') || q.includes('submission')) {
+      reply = `📚 **Assignment Tracking:**\n\nYou have **${stateAssignments.length} active assignments**.\n- For *Full-Stack React + Supabase Cloud Mini-Project*: 20 students eligible, 2 submitted, 1 graded.\n- Automated hourly email reminders are active for pending students.\n\nYou can click **Submission Roster** in the Assignments tab to send manual reminders or grade submissions.`;
+      suggestions = ['What classes do I have today?', 'How many students are at risk in CSE?', 'When is the next CIA exam?'];
+    } else if (q.includes('exam') || q.includes('cia')) {
+      reply = `📝 **Upcoming CIA Examinations:**\n\n- **CIA-2 Mid Semester**: CS601 Design and Analysis of Algorithms scheduled in 6 days at Auditorium Block C (09:30 - 12:30 PM).`;
+      suggestions = ['What classes do I have today?', 'How many students are at risk in CSE?', 'Show assignment submission status'];
+    } else {
+      reply = `Hello **Dr. Kavitha Raman**! I am your AI Faculty Assistant.\n\nI can assist you with your teaching schedule, student attendance monitoring, assignment submission tracking, and CIA examination schedules.`;
+      suggestions = ['What classes do I have today?', 'How many students are at risk in CSE?', 'Show assignment submission status'];
+    }
+    return { reply, suggestions, engine: 'AI Faculty Assistant' };
+  }
+
+  // =========================================================================
+  // 2. ADMIN ROLE SPECIFIC ANSWERS
+  // =========================================================================
+  if (role === 'admin') {
+    const avgAtt = +(stateStudents.reduce((acc, s) => acc + s.overall_attendance, 0) / (stateStudents.length || 1)).toFixed(1);
+    const lowAtt = stateStudents.filter((s) => s.overall_attendance < 75);
+
+    if (q.includes('student') || q.includes('enroll') || q.includes('count') || q.includes('total')) {
+      reply = `📊 **Institutional Student Enrollment:**\n\n- **Total Active Students:** ${stateStudents.length} across 3 engineering departments\n- **CSE:** 20 students\n- **IT:** 20 students\n- **ECE:** 20 students\n- **Faculty Count:** ${FACULTY_MEMBERS.length} full-time professors`;
+      suggestions = ['Attendance health across college', 'Is SMTP email service active?', 'List scheduled exams'];
+    } else if (q.includes('attendance') || q.includes('health') || q.includes('below 75') || q.includes('risk')) {
+      reply = `📈 **Campus-Wide Attendance Compliance:**\n\n- **Overall Average Attendance:** **${avgAtt}%**\n- **Students Below 75% Safe Threshold:** **${lowAtt.length} students**\n- **High Risk Defaulters (<65%):** ${lowAtt.filter(s => s.overall_attendance < 65).length} students\n\nAll alerts are routed through the automated SMTP Parent Dispatcher.`;
+      suggestions = ['Is SMTP email service active?', 'How many total students are enrolled?', 'List scheduled exams'];
+    } else if (q.includes('smtp') || q.includes('mail') || q.includes('email') || q.includes('gateway')) {
+      reply = `✉️ **SMTP Mailer Infrastructure Status:**\n\n- **Host:** smtp.gmail.com:587 (TLS Enabled)\n- **Sender Address:** noreply@college-erp.edu\n- **Status:** **Active & Operational**\n- Parent attendance warning alerts and hourly assignment reminders are running automatically.`;
+      suggestions = ['Attendance health across college', 'How many total students are enrolled?', 'List scheduled exams'];
+    } else {
+      reply = `Hello Administrator! I am your **Institutional AI Governance Assistant**.\n\nI can provide instant summaries on campus enrollment, attendance compliance rates, automated SMTP alert logs, and system operations.`;
+      suggestions = ['How many total students are enrolled?', 'Attendance health across college', 'Is SMTP email service active?'];
+    }
+    return { reply, suggestions, engine: 'AI Institutional Governance' };
+  }
+
+  // =========================================================================
+  // 3. STUDENT ROLE: COMPREHENSIVE INTELLIGENCE
+  // =========================================================================
+
+  // A. PERIOD-BY-PERIOD ATTENDANCE & ABSENCES
+  if (
+    q.includes('period') ||
+    q.includes('which period') ||
+    q.includes('absent') ||
+    q.includes('missed class') ||
+    q.includes('missed period') ||
+    q.includes('hour') ||
+    q.includes('attendance today') ||
+    q.includes('present today') ||
+    q.includes('cut class')
+  ) {
+    const periodRecords = getStudentPeriodAttendanceRecords(st);
+    const absentRecords = periodRecords.filter((r) => r.status === 'Absent');
+    const todayRecords = periodRecords.filter((r) => r.date === '2026-10-23');
+    const yesterdayRecords = periodRecords.filter((r) => r.date === '2026-10-22');
+
+    let absenceBreakdown = '';
+    if (absentRecords.length === 0) {
+      absenceBreakdown = `🎉 **Zero Period Absences!** You have attended 100% of your scheduled periods across all recent instructional days. Outstanding discipline!`;
+    } else {
+      absenceBreakdown = `⚠️ **Recorded Period Absences (${absentRecords.length} Total):**\n\n` +
+        absentRecords.map((r) => `- **${r.date_label} • Period ${r.period_number} (${r.period_time})**:\n  - Course: **${r.subject_name}** (${r.subject_code})\n  - Faculty: ${r.faculty_name} &bull; Room: ${r.room}\n  - Remark: *${r.remarks}*`).join('\n\n');
+    }
+
+    reply = `📅 **Period-Wise Attendance Audit for ${st.name} (${st.reg_no}):**\n\n` +
+      `- **Today's Status (Wed, Oct 23)**: ${todayRecords.filter((r) => r.status === 'Present').length} of ${todayRecords.length} periods attended (${todayRecords.filter((r) => r.status === 'Absent').length} absent).\n` +
+      `- **Yesterday's Status (Tue, Oct 22)**: ${yesterdayRecords.filter((r) => r.status === 'Present').length} of ${yesterdayRecords.length} periods attended.\n\n` +
+      `${absenceBreakdown}\n\n` +
+      `💡 **New Feature**: You can now view and filter your hour-by-hour classroom logs directly inside the **Daily Period-by-Period Attendance Ledger** card in your **Attendance** tab!`;
+
+    suggestions = [
+      'What is my overall attendance?',
+      'How many classes should I attend to reach 75%?',
+      'What is my timetable today?',
+      'How do I apply for OD or Medical leave?'
+    ];
+  }
+
+  // B. OVERALL ATTENDANCE & RECOVERY CLASSES
+  else if (
+    q.includes('attendance') ||
+    q.includes('recovery') ||
+    q.includes('75%') ||
+    q.includes('safe') ||
+    q.includes('warning') ||
+    q.includes('defaulter') ||
+    q.includes('reach 75')
+  ) {
+    const recCount = st.recovery_classes || Math.max(0, Math.ceil((0.75 * (st.total_conducted || 40) - (st.total_attended || 34)) / (1 - 0.75)));
+    if (q.includes('recovery') || q.includes('how many class') || q.includes('how many classes') || q.includes('to reach 75')) {
+      if (st.overall_attendance >= 75) {
+        reply = `🎉 **Attendance Status: Safe & Verified!**\n\nYour current overall attendance is **${st.overall_attendance}%**, which satisfies the statutory college threshold of **75%**. You currently require **0 recovery classes**.\n\n- Attended: **${st.total_attended} / ${st.total_conducted} classes**\n- Standing: **Safe Standing** (Eligible for Hall Ticket)`;
+      } else {
+        reply = `⚠️ **Attendance Recovery Requirement:**\n\nYour current overall attendance is **${st.overall_attendance}%** (${st.risk_status} Standing).\n\nTo cross the mandatory **75.0%** university threshold, you must attend the next **${recCount} consecutive classes** without absence.\n\n$$\\text{Target Attendance: } \\frac{${st.total_attended} + ${recCount}}{${st.total_conducted} + ${recCount}} \\ge 75.0\\%$$\n\nAutomated parent notifications have been routed to **${st.parent_email}**. Please meet with your faculty advisor.`;
+      }
+    } else if (q.includes('which subject') || q.includes('subject-wise') || q.includes('subjects am i below')) {
+      reply = `📋 **Subject-Wise Attendance Ledger for ${st.name}:**\n\n` +
+        `- **CS601 Design & Analysis of Algorithms**: ${st.overall_attendance >= 75 ? '86%' : '68%'} (Dr. Kavitha Raman) &bull; ${st.overall_attendance >= 75 ? 'Safe' : 'Warning'}\n` +
+        `- **CS602 Artificial Intelligence & ML**: ${st.overall_attendance >= 75 ? '82%' : '71%'} (Dr. Rajesh Kulkarni) &bull; ${st.overall_attendance >= 75 ? 'Safe' : 'Warning'}\n` +
+        `- **CS603 Database Engineering & Distributed Systems**: ${st.overall_attendance >= 75 ? '88%' : '62%'} (Prof. Suresh Kumar) &bull; ${st.overall_attendance >= 75 ? 'Safe' : 'High Risk'}\n\n` +
+        `*Overall Cumulative Attendance: **${st.overall_attendance}%** (${st.risk_status})*`;
+    } else {
+      reply = `📊 **Attendance Overview for ${st.name}:**\n\n- **Overall Percentage:** **${st.overall_attendance}%**\n- **Academic Standing:** **${st.risk_status}**\n- **Total Attended Sessions:** ${st.total_attended || 34} of ${st.total_conducted || 40} classes\n` +
+        (st.overall_attendance < 75
+          ? `\n⚠️ **Action Mandate:** You must attend **${recCount} consecutive classes** to restore 75% statutory compliance. Parent email alerts are active.`
+          : `\n✅ You hold good standing for semester examination hall ticket issuance.`);
+    }
+    suggestions = ['Which period was I absent?', 'What is my timetable today?', 'When is my next examination?', 'How do I apply for OD?'];
+  }
+
+  // C. TIMETABLE & DAILY CLASS SCHEDULE
+  else if (q.includes('timetable') || q.includes('schedule') || q.includes('class') || q.includes('today') || q.includes('period 1') || q.includes('period 2')) {
+    reply = `📅 **Today's Official Timetable (Semester 6, ${st.department_name || 'CSE'} Section ${st.section || 'A'}):**\n\n` +
+      `- **Period 1 (09:00 - 10:00 AM)**: CS601 Design and Analysis of Algorithms &bull; Hall 302 &bull; Dr. Kavitha Raman\n` +
+      `- **Period 2 (10:15 - 11:15 AM)**: CS602 Artificial Intelligence & ML &bull; AI Lab 1 &bull; Dr. Rajesh Kulkarni\n` +
+      `- **Period 3 (11:30 - 12:30 PM)**: CS603 Database Engineering &bull; Hall 304 &bull; Prof. Suresh Kumar\n` +
+      `- **Period 4 (01:30 - 02:30 PM)**: CS604 Cloud Computing & DevOps Laboratory &bull; Lab Block 3 &bull; Dr. Kavitha Raman\n` +
+      `- **Period 5 (02:30 - 03:30 PM)**: CS605 Web Technology & Microservices &bull; Lab Block 4 &bull; Dr. P. Sangeetha\n\n` +
+      `*Lunch Interval: 12:30 PM - 01:30 PM &bull; Total Conducted Today: 5 Periods.*`;
+    suggestions = ['Which period was I absent?', 'What is my overall attendance?', 'When is my next examination?'];
+  }
+
+  // D. EXAMS, TESTS, CIA & DATES
+  else if (q.includes('exam') || q.includes('cia') || q.includes('mid') || q.includes('test') || q.includes('hall ticket')) {
+    reply = `📝 **Upcoming CIA Internal Examination Schedule:**\n\n` +
+      `- **Assessment:** CIA-2 Continuous Internal Assessment\n` +
+      `- **Course:** CS601 - Design and Analysis of Algorithms\n` +
+      `- **Date:** In 6 days (Auditorium Block C)\n` +
+      `- **Timing:** 09:30 AM - 12:30 PM (3 Hours)\n` +
+      `- **Weightage:** 60 Marks (Converted to 30 Internal Marks)\n` +
+      `- **Syllabus Units:** Unit 1 (Asymptotic Notations & Recurrences) + Unit 2 (Divide & Conquer, Dynamic Programming)\n\n` +
+      `*Statutory Rule: Minimum 75% attendance is required to generate the examination hall ticket.*`;
+    suggestions = ['What is my overall attendance?', 'Show my internal marks', 'Explain QuickSort algorithm'];
+  }
+
+  // E. MARKS, CGPA & GPA CALCULATION
+  else if (q.includes('mark') || q.includes('grade') || q.includes('cgpa') || q.includes('gpa') || q.includes('internal')) {
+    reply = `🎯 **Continuous Assessment Marks & CGPA Report for ${st.name}:**\n\n` +
+      `- **CS601 (Algorithms)**: CIA-1: 28/30 &bull; CIA-2: 27/30 &bull; Assignment: 9.5/10 &bull; **Total: 55.0 / 60.0 (Grade: A+)**\n` +
+      `- **CS602 (AI & ML)**: CIA-1: 26/30 &bull; CIA-2: 25.5/30 &bull; Assignment: 9.0/10 &bull; **Total: 51.5 / 60.0 (Grade: A)**\n` +
+      `- **CS603 (Database Systems)**: CIA-1: 24/30 &bull; CIA-2: 25/30 &bull; Assignment: 8.5/10 &bull; **Total: 49.0 / 60.0 (Grade: A)**\n\n` +
+      `📊 **Cumulative Grade Point Average (CGPA):** **8.74 / 10.0**\n\n` +
+      `**How CGPA is Computed:**\n` +
+      `$$\\text{GPA} = \\frac{\\sum (\\text{Credits}_i \\times \\text{GradePoints}_i)}{\\sum \\text{Credits}_i}$$\n` +
+      `Scale: O (10 pts, 91-100), A+ (9 pts, 81-90), A (8 pts, 71-80), B+ (7 pts, 61-70), B (6 pts, 50-60).`;
+    suggestions = ['When is my next examination?', 'What is my overall attendance?', 'What placements am I eligible for?'];
+  }
+
+  // F. FEES, TUITION & DUES
+  else if (q.includes('fee') || q.includes('fees') || q.includes('dues') || q.includes('tuition') || q.includes('balance') || q.includes('paid')) {
+    const isHighRisk = st.risk_status === 'High Risk';
+    const totalAmt = 85000;
+    const paidAmt = isHighRisk ? 70000 : 85000;
+    const pendingAmt = totalAmt - paidAmt;
+    reply = `💳 **Institutional Tuition Account Summary for ${st.name}:**\n\n` +
+      `- **Academic Term:** Academic Year 2025 - 2026 (Semester 6)\n` +
+      `- **Total Assessed Fees:** ₹${totalAmt.toLocaleString('en-IN')}\n` +
+      `- **Amount Paid to Date:** ₹${paidAmt.toLocaleString('en-IN')}\n` +
+      `- **Outstanding Balance:** **₹${pendingAmt.toLocaleString('en-IN')}**\n` +
+      `- **Receipt Status:** **${pendingAmt === 0 ? 'Fully Cleared (Paid in Full)' : 'Pending ₹15,000 Installment'}**\n\n` +
+      (pendingAmt === 0
+        ? '✅ You have zero outstanding dues. Verified receipts can be downloaded anytime from the Student Fees tab.'
+        : '⚠️ Please clear outstanding institutional balance prior to semester hall ticket release.');
+    suggestions = ['What is my overall attendance?', 'When is my next examination?', 'What is my timetable today?'];
+  }
+
+  // G. PLACEMENTS, INTERNSHIPS & SALARIES
+  else if (q.includes('placement') || q.includes('job') || q.includes('interview') || q.includes('company') || q.includes('salary') || q.includes('lpa') || q.includes('amazon') || q.includes('zoho')) {
+    reply = `🚀 **Active Campus Placement Drives (Batch 2026):**\n\n` +
+      `1. 🏢 **Amazon Web Services (AWS)**\n` +
+      `   - **Role:** Cloud Support Associate / SDE-1\n` +
+      `   - **CTC Package:** **16.5 LPA**\n` +
+      `   - **Eligibility:** CSE, IT, ECE (CGPA $\\ge 7.5$, 0 standing arrears)\n` +
+      `   - **Application Deadline:** In 14 days\n\n` +
+      `2. 🏢 **Zoho Corporation**\n` +
+      `   - **Role:** Software Development Engineer\n` +
+      `   - **CTC Package:** **12.0 LPA**\n` +
+      `   - **Eligibility:** Open to all engineering branches\n` +
+      `   - **Application Deadline:** In 10 days\n\n` +
+      `*Registration: Visit Campus Placements module to upload your resume and enter drive rosters.*`;
+    suggestions = ['Show my internal marks and CGPA', 'What is my overall attendance?', 'How do I prepare for coding rounds?'];
+  }
+
+  // H. LEAVE APPLICATION, ON-DUTY (OD) & MEDICAL LEAVE
+  else if (q.includes('leave') || q.includes('od') || q.includes('on duty') || q.includes('medical') || q.includes('permission') || q.includes('absentee')) {
+    reply = `📄 **Leave & On-Duty (OD) Regulatory Guidelines:**\n\n` +
+      `1. **Medical Leave**:\n` +
+      `   - A student hospitalized or unwell must submit a medical certificate signed by a registered medical practitioner within **3 working days** of returning to campus.\n` +
+      `   - Once verified by the Faculty Advisor and HOD, medical leaves are recorded to exempt semester debarment.\n\n` +
+      `2. **On-Duty (OD) Permissions**:\n` +
+      `   - Allowed for approved inter-college symposiums, smart India hackathons, IEEE paper presentations, or university sports tournaments.\n` +
+      `   - Maximum quota: **10 days per academic semester**.\n` +
+      `   - Submit event brochure and pre-approval request to Dr. Kavitha Raman before departing.`;
+    suggestions = ['Which period was I absent?', 'What is my overall attendance?', 'What is my timetable today?'];
+  }
+
+  // I. CAMPUS LIFE, TIMINGS & FACILITIES
+  else if (q.includes('timing') || q.includes('library') || q.includes('canteen') || q.includes('bus') || q.includes('transport') || q.includes('hostel') || q.includes('hod')) {
+    reply = `🏛️ **Campus Operational Hours & Facilities:**\n\n` +
+      `- **Academic Hours:** 08:45 AM - 04:15 PM (Monday to Friday)\n` +
+      `- **Central Digital Library:** Open 08:00 AM - 08:00 PM on all instructional days. 4 book lending cards per student (14-day renewal).\n` +
+      `- **College Transport:** 24 operational bus routes covering major corridors across the metropolitan area.\n` +
+      `- **Hostel Regulations:** Study hours 08:30 PM - 10:30 PM. Campus gate curfew is 08:30 PM sharp.\n` +
+      `- **HOD, Computer Science:** Dr. Kavitha Raman (Office: Academic Block 3, 2nd Floor).`;
+    suggestions = ['What is my timetable today?', 'What is my overall attendance?', 'When is my next examination?'];
+  }
+
+  // J. COMPUTER SCIENCE & TECHNICAL CONCEPTS: QUICKSORT
+  else if (q.includes('quicksort')) {
+    reply = `⚡ **QuickSort Algorithm Deep-Dive:**\n\n` +
+      `- **Paradigm:** Divide-and-Conquer using in-place partitioning around a pivot element.\n` +
+      `- **Partitioning Logic:** Elements smaller than pivot go left; larger elements go right.\n` +
+      `- **Time Complexities**:\n` +
+      `  - **Best Case:** $\\mathcal{O}(n \\log n)$ (Pivot splits array into two equal halves)\n` +
+      `  - **Average Case:** $\\mathcal{O}(n \\log n)$\n` +
+      `  - **Worst Case:** $\\mathcal{O}(n^2)$ (Pivot chosen is always smallest or largest element in sorted array)\n` +
+      `- **Space Complexity:** $\\mathcal{O}(\\log n)$ recursion stack frames.\n` +
+      `- **Pro-Tip / Optimization:** Use **Randomized Partitioning** or **Median-of-Three** pivot selection to guarantee expected $\\mathcal{O}(n \\log n)$ performance.`;
+    suggestions = ['Explain MergeSort algorithm', 'Explain Master Theorem', 'What is my timetable today?'];
+  }
+
+  // K. MERGESORT
+  else if (q.includes('mergesort')) {
+    reply = `🔄 **MergeSort Algorithm Deep-Dive:**\n\n` +
+      `- **Paradigm:** Divide-and-Conquer with guaranteed asymptotic stability.\n` +
+      `- **Mechanism:** Recursively divides array into halves until singletons remain, then merges sorted subarrays in linear time $\\mathcal{O}(n)$.\n` +
+      `- **Recurrence Relation:** $T(n) = 2T(n/2) + \\Theta(n)$\n` +
+      `- **Time Complexity:** Guaranteed $\\mathcal{O}(n \\log n)$ across all cases (Best, Average, Worst).\n` +
+      `- **Space Complexity:** $\\mathcal{O}(n)$ auxiliary memory for merging.\n` +
+      `- **Comparison with QuickSort:** MergeSort is stable and optimal for linked lists and external disk sorting, whereas QuickSort operates in-place.`;
+    suggestions = ['Explain QuickSort algorithm', 'Explain Master Theorem', 'What is my timetable today?'];
+  }
+
+  // L. MASTER THEOREM
+  else if (q.includes('master theorem') || q.includes('recurrence')) {
+    reply = `📐 **Master Theorem Formulation & Cases:**\n\n` +
+      `For divide-and-conquer recurrences of form:\n` +
+      `$$T(n) = aT(n/b) + f(n) \\quad (a \\ge 1, b > 1)$$\n\n` +
+      `1. **Case 1 (Leaf Dominant)**: If $f(n) = \\mathcal{O}(n^{\\log_b a - \\epsilon})$ for $\\epsilon > 0$:\n` +
+      `   $$\\implies T(n) = \\Theta(n^{\\log_b a})$$\n\n` +
+      `2. **Case 2 (Balanced Work)**: If $f(n) = \\Theta(n^{\\log_b a})$:\n` +
+      `   $$\\implies T(n) = \\Theta(n^{\\log_b a} \\log n)$$\n\n` +
+      `3. **Case 3 (Root Dominant)**: If $f(n) = \\Omega(n^{\\log_b a + \\epsilon})$ and $a f(n/b) \\le c f(n)$:\n` +
+      `   $$\\implies T(n) = \\Theta(f(n))$$\n\n` +
+      `*Example:* MergeSort $T(n) = 2T(n/2) + n \\implies a=2, b=2, \\log_2 2 = 1$. Since $f(n) = n^1 = \\Theta(n^1)$, Case 2 applies $\\implies T(n) = \\Theta(n \\log n)$.`;
+    suggestions = ['Explain QuickSort algorithm', 'Explain Dijkstra algorithm', 'What is my timetable today?'];
+  }
+
+  // M. DIJKSTRA & GRAPH ALGORITHMS
+  else if (q.includes('dijkstra') || q.includes('shortest path') || q.includes('bellman')) {
+    reply = `📍 **Dijkstra's Shortest Path Algorithm:**\n\n` +
+      `- **Objective:** Calculates the shortest path distances from a single source vertex to all other vertices in a weighted graph.\n` +
+      `- **Critical Constraint:** Edge weights must be strictly **non-negative** ($w(u,v) \\ge 0$). For negative edges, use **Bellman-Ford** algorithm.\n` +
+      `- **Data Structure:** Min-Priority Queue (Binary Heap / Fibonacci Heap).\n` +
+      `- **Time Complexity:** $\\mathcal{O}((V + E) \\log V)$ with adjacency list and binary min-heap.\n` +
+      `- **Greedy Property:** Once a vertex is extracted from the priority queue, its tentative distance is finalized and guaranteed optimal.`;
+    suggestions = ['Explain Master Theorem', 'Explain Dynamic Programming', 'What is my timetable today?'];
+  }
+
+  // N. OPERATING SYSTEMS: PROCESS, THREAD, DEADLOCK & SCHEDULING
+  else if (q.includes('operating system') || q.includes('deadlock') || q.includes('process') || q.includes('thread') || q.includes('semaphore') || q.includes('mutex') || q.includes('paging') || q.includes('virtual memory')) {
+    if (q.includes('deadlock')) {
+      reply = `🔒 **Deadlock in Operating Systems:**\n\n` +
+        `A state where a set of processes are permanently blocked because each is holding a resource and waiting for another held by another process.\n\n` +
+        `**The 4 Necessary Coffman Conditions:**\n` +
+        `1. **Mutual Exclusion**: At least one resource must be non-shareable.\n` +
+        `2. **Hold and Wait**: A process holds resource(s) while waiting for additional resources.\n` +
+        `3. **No Preemption**: Resources cannot be forcibly taken from a process.\n` +
+        `4. **Circular Wait**: A closed chain of processes exists where each waits for a resource held by the next.\n\n` +
+        `**Handling:** Banker's Algorithm (Deadlock Avoidance using safe states), Resource Ordering (Prevention), or Detection via Wait-For Graphs.`;
+    } else if (q.includes('process') || q.includes('thread')) {
+      reply = `⚙️ **Process vs Thread:**\n\n` +
+        `- **Process**: An executing program with an independent virtual address space, containing its own Code, Data, Heap, and Stack. Managed via Process Control Block (PCB). Heavyweight context switching.\n` +
+        `- **Thread**: A lightweight unit of CPU execution within a process. Threads of the same process share the Code, Data, and Heap memory, but maintain private Stacks and Registers. Fast context switching.\n\n` +
+        `*Key Insight:* Concurrency within a single application is typically achieved via multithreading to avoid the overhead of Inter-Process Communication (IPC).`;
+    } else {
+      reply = `🖥️ **Operating System Core Architecture:**\n\n` +
+        `- **CPU Scheduling**: FCFS, Shortest Job First (SJF), and Round Robin (time-slice preemptive).\n` +
+        `- **Concurrency & Synchronization**: Mutex locks (binary mutual exclusion) and Semaphores (integer counter for resource pooling) eliminate race conditions in critical sections.\n` +
+        `- **Virtual Memory & Paging**: Translates virtual addresses to physical frames via page tables and Translation Lookaside Buffer (TLB). LRU replacement evicts the page unreferenced for the longest duration.`;
+    }
+    suggestions = ['Explain Deadlock conditions', 'Explain Process vs Thread', 'What is my timetable today?'];
+  }
+
+  // O. DATABASE MANAGEMENT SYSTEMS: NORMALIZATION, ACID & INDEXING
+  else if (q.includes('database') || q.includes('dbms') || q.includes('normalization') || q.includes('acid') || q.includes('sql') || q.includes('join') || q.includes('b+ tree') || q.includes('index')) {
+    if (q.includes('normalization') || q.includes('1nf') || q.includes('2nf') || q.includes('3nf') || q.includes('bcnf')) {
+      reply = `🗄️ **Database Normalization (1NF to BCNF):**\n\n` +
+        `Systematic decomposition of relational tables to eliminate data redundancy and prevent insertion, update, and deletion anomalies:\n\n` +
+        `1. **1NF (First Normal Form)**: All column values must be atomic (no multi-valued or composite attributes).\n` +
+        `2. **2NF (Second Normal Form)**: Must be in 1NF and have **no partial dependencies** (every non-prime attribute must depend on the whole primary key).\n` +
+        `3. **3NF (Third Normal Form)**: Must be in 2NF and have **no transitive dependencies** ($X \\rightarrow Y, Y \\rightarrow Z$).\n` +
+        `4. **BCNF (Boyce-Codd Normal Form)**: For every functional dependency $X \\rightarrow Y$, $X$ must be a super key.`;
+    } else if (q.includes('acid')) {
+      reply = `🛡️ **ACID Properties in Transactions:**\n\n` +
+        `- **A - Atomicity**: "All or nothing". Either the entire transaction commits successfully or all operations are rolled back (guaranteed via Write-Ahead Logging).\n` +
+        `- **C - Consistency**: Database must transition from one valid state satisfying all schema constraints to another.\n` +
+        `- **I - Isolation**: Concurrent transactions execute without interfering with one another (enforced via Strict Two-Phase Locking).\n` +
+        `- **D - Durability**: Once committed, changes persist permanently on non-volatile storage even across system power failures.`;
+    } else {
+      reply = `🗃️ **Database Engineering & B+ Tree Indexing:**\n\n` +
+        `- **Clustered Index**: Determines the physical storage order of data rows on disk (only 1 per table, typically the Primary Key).\n` +
+        `- **Non-Clustered Index**: Separate B+ tree structure whose leaf nodes store pointers (Row IDs) to actual data pages.\n` +
+        `- **B+ Tree Efficiency**: All leaf nodes are linked in a doubly-linked list for fast range scans. Tree height is balanced at $\\mathcal{O}(\\log_B N)$, drastically reducing disk I/O operations.`;
+    }
+    suggestions = ['Explain ACID properties', 'Explain Normalization forms', 'What is my timetable today?'];
+  }
+
+  // P. COMPUTER NETWORKS: OSI, TCP VS UDP & PROTOCOLS
+  else if (q.includes('network') || q.includes('osi') || q.includes('tcp') || q.includes('udp') || q.includes('dns') || q.includes('http')) {
+    reply = `🌐 **Computer Networks: OSI Model & Transport Layer:**\n\n` +
+      `- **OSI 7-Layer Stack**: Physical (Bits) $\\rightarrow$ Data Link (Frames) $\\rightarrow$ Network (Packets) $\\rightarrow$ Transport (Segments) $\\rightarrow$ Session $\\rightarrow$ Presentation $\\rightarrow$ Application (Data).\n\n` +
+      `- **TCP vs UDP**:\n` +
+      `  - **TCP (Transmission Control Protocol)**: Connection-oriented, guarantees delivery and ordering via 3-way handshake (SYN, SYN-ACK, ACK), flow control (sliding window), and congestion control.\n` +
+      `  - **UDP (User Datagram Protocol)**: Connectionless, lightweight, low-overhead datagram protocol with no retransmissions. Ideal for real-time video, gaming, and DNS lookups.\n\n` +
+      `- **DNS (Domain Name System)**: Translates human-readable domain names (e.g. \`college.edu\`) to numerical IP addresses via hierarchical resolvers (Root, TLD, Authoritative).`;
+    suggestions = ['Explain TCP 3-way handshake', 'Explain OSI 7 Layers', 'What is my timetable today?'];
+  }
+
+  // Q. SOFTWARE ENGINEERING, OOP & DESIGN PATTERNS
+  else if (q.includes('oop') || q.includes('polymorphism') || q.includes('inheritance') || q.includes('solid') || q.includes('api') || q.includes('rest')) {
+    reply = `💻 **Object-Oriented Programming (OOP) & SOLID Principles:**\n\n` +
+      `- **Encapsulation**: Bundling data attributes and member functions together while restricting direct access via access modifiers (private/public).\n` +
+      `- **Inheritance**: Deriving new classes from existing base classes to promote code reuse.\n` +
+      `- **Polymorphism**: Compile-time (Method Overloading) vs Runtime (Method Overriding via virtual dispatch tables).\n` +
+      `- **Abstraction**: Hiding internal implementation complexity behind abstract interfaces.\n\n` +
+      `**SOLID Principles**:\n` +
+      `- **S**: Single Responsibility Principle\n` +
+      `- **O**: Open/Closed Principle (open for extension, closed for modification)\n` +
+      `- **L**: Liskov Substitution Principle\n` +
+      `- **I**: Interface Segregation Principle\n` +
+      `- **D**: Dependency Inversion Principle`;
+    suggestions = ['Explain Dynamic Programming', 'What is my timetable today?', 'When is my next examination?'];
+  }
+
+  // R. PROGRAMMING & CODE GENERATION
+  else if (q.includes('code') || q.includes('python') || q.includes('java') || q.includes('fibonacci') || q.includes('binary search')) {
+    reply = `💻 **Algorithmic Implementation: Binary Search (Python 3):**\n\n` +
+      `\`\`\`python\n` +
+      `def binary_search(arr, target):\n` +
+      `    left, right = 0, len(arr) - 1\n` +
+      `    \n` +
+      `    while left <= right:\n` +
+      `        mid = left + (right - left) // 2  # Prevents integer overflow\n` +
+      `        \n` +
+      `        if arr[mid] == target:\n` +
+      `            return mid  # Target found at index mid\n` +
+      `        elif arr[mid] < target:\n` +
+      `            left = mid + 1\n` +
+      `        else:\n` +
+      `            right = mid - 1\n` +
+      `            \n` +
+      `    return -1  # Target element not present in array\n` +
+      `\`\`\`\n\n` +
+      `- **Prerequisite:** Array must be pre-sorted.\n` +
+      `- **Time Complexity:** $\\mathcal{O}(\\log n)$ since the search space is halved at each step.\n` +
+      `- **Space Complexity:** $\\mathcal{O}(1)$ iterative space.`;
+    suggestions = ['Explain QuickSort algorithm', 'Explain Master Theorem', 'What is my timetable today?'];
+  }
+
+  // S. TANGLISH QUERIES
+  else if (q.includes('enna') || q.includes('epdi') || q.includes('solunga') || q.includes('puriyala') || q.includes('tamil') || q.includes('tanglish') || q.includes('eppadi')) {
+    reply = `👋 **Vanakkam ${st.name}!**\n\nNeenga keta question-ku answer itho:\n\n` +
+      `1. **Attendance**: Ungaloda current overall attendance **${st.overall_attendance}%** (${st.risk_status} Standing). Regulatory 75% rule maintain panradhu romba mukkiyam.\n` +
+      `2. **Period Absences**: Neenga yesterday Period 3 (CS603) attend pannala. New **Daily Period-by-Period Attendance Ledger** card-la check pannikalam.\n` +
+      `3. **Timetable**: Inaiku CS601, CS602, CS603, CS604, CS605 5 periods schedule aagi irukku.\n` +
+      `4. **Exams**: CIA-2 exams in 6 days-la start aaguthu.\n\n` +
+      `Engineering concepts or programming doubts ethuvum irunthaalum kellinga, easy-ah step-by-step explain pandren!`;
+    suggestions = ['Which period was I absent?', 'What is my timetable today?', 'When is my next examination?'];
+  }
+
+  // T. UNIVERSAL INTELLIGENT ACADEMIC FALLBACK (ANSWERS ANY QUERY)
+  else {
+    const topicTitle = query.length > 50 ? query.slice(0, 47) + '...' : query;
+    reply = `### 📘 Academic Analysis & Technical Breakdown: "${topicTitle}"\n\n` +
+      `Here is a structured, in-depth academic explanation for your query:\n\n` +
+      `#### 1. Core Principle & Formal Definition\n` +
+      `**${query}** represents a fundamental engineering paradigm analyzed across modern computing curricula. It establishes systematic abstraction boundaries, enforcing mathematical invariants and computational efficiency.\n\n` +
+      `#### 2. Architecture & Operational Mechanics\n` +
+      `- **Decomposition**: Complex systems isolate state transitions into modular components to minimize resource contention.\n` +
+      `- **Algorithmic Bounds**: Optimized routines adhere to strict space-time tradeoffs, maintaining polynomial or sub-linear complexity $\\mathcal{O}(n \\log n)$ rather than unscalable exponential costs.\n` +
+      `- **Execution Guarantees**: Handshake protocols and transactional rollbacks preserve fault tolerance across distributed nodes.\n\n` +
+      `#### 3. Real-World Engineering Analogy\n` +
+      `Consider modern distributed cloud infrastructure: instead of funneling every transaction through a single bottleneck, requests are load-balanced across decoupled services, indexed through logarithmic search trees, and verified with checksums.\n\n` +
+      `#### 4. University Examination & Interview Takeaway\n` +
+      `- Formulate your answer starting with the formal 2-mark definition.\n` +
+      `- Draw a clean architecture block diagram or recursion tree trace.\n` +
+      `- State exact Big-O asymptotic bounds and cite boundary conditions.`;
+
+    suggestions = [
+      'Which period was I absent?',
+      'What is my overall attendance?',
+      'What is my timetable today?',
+      'When is my next examination?'
+    ];
+  }
+
+  return { reply, suggestions, engine: 'AI ERP Intelligence Engine' };
+}
+
+
 // Client adapter object that mirrors Axios interface
 const client = {
   async get(rawUrl, config = {}) {
@@ -358,6 +868,9 @@ const client = {
         }
       ];
 
+      const periodRecords = getStudentPeriodAttendanceRecords(st);
+      const todayRecords = periodRecords.filter((r) => r.date === '2026-10-23');
+
       return {
         data: {
           student: st,
@@ -371,7 +884,16 @@ const client = {
           required_percentage: 75.0,
           subjects: attendanceSubjects,
           subject_attendance: attendanceSubjects,
-          records: []
+          records: periodRecords,
+          period_records: periodRecords,
+          daily_period_summary: {
+            total_periods_week: 25,
+            attended_periods_week: periodRecords.filter((r) => r.status === 'Present').length,
+            absent_periods_week: periodRecords.filter((r) => r.status === 'Absent').length,
+            today_total: todayRecords.length,
+            today_present: todayRecords.filter((r) => r.status === 'Present').length,
+            today_absent: todayRecords.filter((r) => r.status === 'Absent').length
+          }
         }
       };
     }
@@ -1583,24 +2105,8 @@ const client = {
           `- [ ] **2-Mark Quick Definitions**: Big-O, Theta, Asymptotic Upper Bound, Functional Dependency, Serializability.`;
       } else {
         // Grounded Q&A
-        const qLower = (query || '').toLowerCase();
-        if (qLower.includes('quicksort') || qLower.includes('sort')) {
-          reply = `### QuickSort Algorithm Deep-Dive\n\n- **Paradigm**: Divide and Conquer using in-place partitioning.\n- **Recurrence**: $T(n) = T(k) + T(n - k - 1) + \\Theta(n)$.\n- **Complexities**:\n  - Best Case: $\\mathcal{O}(n \\log n)$ when partition evenly halves array.\n  - Average Case: $\\mathcal{O}(n \\log n)$.\n  - Worst Case: $\\mathcal{O}(n^2)$ when pivot is always min/max.\n- **Space**: $\\mathcal{O}(\\log n)$ recursion stack frames.\n- **Optimization Tip**: Use Randomized Partitioning or Median-of-Three to eliminate worst case.`;
-        } else if (qLower.includes('master theorem') || qLower.includes('recurrence')) {
-          reply = `### Master Theorem Explanation & Formulation\n\nGiven $T(n) = aT(n/b) + f(n)$ with $a \\ge 1, b > 1$:\n\n1. **Case 1**: If $f(n) = \\mathcal{O}(n^{\\log_b a - \\epsilon})$, then $T(n) = \\Theta(n^{\\log_b a})$.\n2. **Case 2**: If $f(n) = \\Theta(n^{\\log_b a})$, then $T(n) = \\Theta(n^{\\log_b a} \\log n)$.\n3. **Case 3**: If $f(n) = \\Omega(n^{\\log_b a + \\epsilon})$ and satisfies regularity condition $af(n/b) \\le cf(n)$, then $T(n) = \\Theta(f(n))$.\n\n*Worked Example (MergeSort)*: $T(n) = 2T(n/2) + \\Theta(n)$. Here $a=2, b=2, \\log_2 2 = 1$. Since $f(n) = \\Theta(n^1)$, Case 2 applies $\\implies T(n) = \\Theta(n \\log n)$.`;
-        } else if (qLower.includes('dijkstra') || qLower.includes('graph')) {
-          reply = `### Dijkstra's Shortest Path Algorithm\n\n- **Objective**: Finds the shortest paths from a single source vertex to all other vertices in a weighted graph.\n- **Requirement**: Edge weights must be strictly **non-negative** ($w(u, v) \\ge 0$).\n- **Data Structure**: Priority Queue (Binary Heap / Fibonacci Heap).\n- **Running Time**: $\\mathcal{O}((V + E) \\log V)$.\n- **Invariant**: Once a vertex is extracted from the priority queue, its tentative distance is finalized and guaranteed optimal.`;
-        } else if (qLower.includes('index') || qLower.includes('database') || qLower.includes('sql') || qLower.includes('b+')) {
-          reply = `### Database Indexing & B+ Trees\n\n- **Clustered Index**: Determines the physical ordering of data pages on disk. Only one clustered index can exist per table (usually Primary Key).\n- **Non-Clustered (Secondary) Index**: Stores key values pointing to row identifiers (RIDs) without reordering data blocks.\n- **B+ Tree Architecture**: Leaves contain data pointers and are doubly linked for sequential range scans; internal nodes contain only routing keys. Search time is $\\mathcal{O}(\\log_B N)$.`;
-        } else if (query && query.trim().length > 0) {
-          reply = `### Academic Analysis: "${query}"\n\n` +
-            `Based on the selected syllabus document (**${docName}**):\n\n` +
-            `1. **Core Definition**: **${query}** represents a fundamental engineering concept analyzed through formal specifications, mathematical invariants, and systematic algorithmic decomposition.\n\n` +
-            `2. **Operational Workflow**: The mechanism operates within predefined boundary conditions, maintaining time efficiency $\\mathcal{O}(n \\log n)$ and minimizing auxiliary memory overhead.\n\n` +
-            `3. **Exam Application**: In university assessments, formulate your answer with the formal definition, an illustrative step-by-step trace diagram, and the asymptotic space/time complexity bounds.`;
-        } else {
-          reply = "Please ask a specific conceptual or syllabus question about this document.";
-        }
+        const ans = generateComprehensiveAIAnswer(query || topic || '', getLoggedInStudent(), 'student', docName);
+        reply = ans.reply;
       }
 
       return {
@@ -1617,11 +2123,6 @@ const client = {
       const user = getLoggedInUser() || {};
       const role = user.role || 'student';
       const rawMsg = data.message || '';
-      const msg = rawMsg.toLowerCase().trim();
-      let reply = '';
-      let suggestions = [];
-
-      // Safe retrieval of student context
       const st = getLoggedInStudent() || {
         name: user.name || 'Student',
         reg_no: '21CS101',
@@ -1638,174 +2139,13 @@ const client = {
         parent_email: 'parent.kumar@gmail.com'
       };
 
-      // 1. Role-specific intelligence: FACULTY
-      if (role === 'faculty') {
-        const cseStudents = stateStudents.filter((s) => s.department_id === 3);
-        const atRisk = cseStudents.filter((s) => s.risk_status === 'High Risk' || s.overall_attendance < 75);
-
-        if (msg.includes('class') || msg.includes('timetable') || msg.includes('today') || msg.includes('schedule')) {
-          reply = `📋 **Today's Teaching Schedule (Dr. Kavitha Raman):**\n\n- **09:00 - 10:00 AM**: CS601 Design and Analysis of Algorithms (Hall 302, Section A)\n- **10:15 - 11:15 AM**: CS602 Artificial Intelligence & Machine Learning (AI Lab 1, Section A)\n- **01:30 - 03:30 PM**: CS604 Cloud Computing & DevOps Laboratory (Lab Block 3)`;
-          suggestions = ['How many students are at risk in CSE?', 'Show assignment submission status', 'When is the next CIA exam?'];
-        } else if (msg.includes('risk') || msg.includes('attendance') || msg.includes('below 75') || msg.includes('defaulter')) {
-          reply = `⚠️ **Attendance Risk Summary (Department of CSE, Semester 6):**\n\nThere are **${atRisk.length} students** currently below the mandatory 75% threshold in your department.\n\n` +
-            atRisk.slice(0, 5).map(s => `- **${s.name}** (${s.reg_no}): **${s.overall_attendance}%** [${s.risk_status}] &bull; Parent: ${s.parent_email}`).join('\n') +
-            `\n\n*Note: Automated parent email alerts are active and logged under Admin Attendance Alert Center.*`;
-          suggestions = ['What classes do I have today?', 'Show assignment submission status', 'List scheduled exams'];
-        } else if (msg.includes('assignment') || msg.includes('submission')) {
-          reply = `📚 **Assignment Tracking:**\n\nYou have **${stateAssignments.length} active assignments**.\n- For *Full-Stack React + Supabase Cloud Mini-Project*: 20 students eligible, 2 submitted, 1 graded.\n- Automated hourly email reminders are active for pending students.\n\nYou can click **Submission Roster** in the Assignments tab to send manual reminders or grade submissions.`;
-          suggestions = ['What classes do I have today?', 'How many students are at risk in CSE?', 'When is the next CIA exam?'];
-        } else if (msg.includes('exam') || msg.includes('cia')) {
-          reply = `📝 **Upcoming CIA Examinations:**\n\n- **CIA-2 Mid Semester**: CS601 Design and Analysis of Algorithms scheduled in 6 days at Auditorium Block C (09:30 - 12:30 PM).`;
-          suggestions = ['What classes do I have today?', 'How many students are at risk in CSE?', 'Show assignment submission status'];
-        } else {
-          reply = `Hello **Dr. Kavitha Raman**! I am your AI Faculty Assistant.\n\nI can assist you with:\n- Your daily lecture and lab schedule\n- Attendance records and student risk monitoring\n- Assignment submission tracking & automated email reminders\n- CIA internal exam schedules`;
-          suggestions = ['What classes do I have today?', 'How many students are at risk in CSE?', 'Show assignment submission status'];
-        }
-      }
-
-      // 2. Role-specific intelligence: ADMIN
-      else if (role === 'admin') {
-        const avgAtt = +(stateStudents.reduce((acc, s) => acc + s.overall_attendance, 0) / (stateStudents.length || 1)).toFixed(1);
-        const lowAtt = stateStudents.filter((s) => s.overall_attendance < 75);
-
-        if (msg.includes('student') || msg.includes('enroll') || msg.includes('count') || msg.includes('total')) {
-          reply = `📊 **Institutional Student Enrollment:**\n\n- **Total Active Students:** ${stateStudents.length} across 3 engineering departments\n- **CSE:** 20 students\n- **IT:** 20 students\n- **ECE:** 20 students\n- **Faculty Count:** ${FACULTY_MEMBERS.length} full-time professors`;
-          suggestions = ['Attendance health across college', 'Is SMTP email service active?', 'List scheduled exams'];
-        } else if (msg.includes('attendance') || msg.includes('health') || msg.includes('below 75') || msg.includes('risk')) {
-          reply = `📈 **Campus-Wide Attendance Compliance:**\n\n- **Overall Average Attendance:** **${avgAtt}%**\n- **Students Below 75% Safe Threshold:** **${lowAtt.length} students**\n- **High Risk Defaulters (<65%):** ${lowAtt.filter(s => s.overall_attendance < 65).length} students\n\nAll alerts are routed through the automated SMTP Parent Dispatcher.`;
-          suggestions = ['Is SMTP email service active?', 'How many total students are enrolled?', 'List scheduled exams'];
-        } else if (msg.includes('smtp') || msg.includes('mail') || msg.includes('email') || msg.includes('gateway')) {
-          reply = `✉️ **SMTP Mailer Infrastructure Status:**\n\n- **Host:** smtp.gmail.com:587 (TLS Enabled)\n- **Sender Address:** noreply@college-erp.edu\n- **Status:** **Active & Operational**\n- Parent attendance warning alerts and hourly assignment reminders are running automatically.`;
-          suggestions = ['Attendance health across college', 'How many total students are enrolled?', 'List scheduled exams'];
-        } else {
-          reply = `Hello Administrator! I am your **Institutional AI Governance Assistant**.\n\nI can provide instant summaries on campus enrollment, attendance compliance rates, automated SMTP alert logs, and system operations.`;
-          suggestions = ['How many total students are enrolled?', 'Attendance health across college', 'Is SMTP email service active?'];
-        }
-      }
-
-      // 3. STUDENT & GENERAL ACADEMIC ASSISTANT
-      else {
-        // Attendance queries
-        if (msg.includes('attendance') || msg.includes('absent') || msg.includes('present') || msg.includes('percentage')) {
-          const recCount = st.recovery_classes || Math.max(0, Math.ceil((0.75 * (st.total_conducted || 40) - (st.total_attended || 34)) / (1 - 0.75)));
-          if (msg.includes('recovery') || msg.includes('how many class') || msg.includes('how many classes') || msg.includes('to reach 75')) {
-            if (st.overall_attendance >= 75) {
-              reply = `🎉 **Attendance Status: Excellent!**\n\nYour current overall attendance is **${st.overall_attendance}%**, which safely exceeds the college mandatory threshold of **75%**. You do not require any recovery classes. Keep up the consistent presence!`;
-            } else {
-              reply = `⚠️ **Attendance Recovery Quota:**\n\nYour current overall attendance is **${st.overall_attendance}%** (${st.risk_status} status).\n\nTo reach the mandatory **75.0%** threshold, you must attend the next **${recCount} consecutive classes** without absence. Ensure you meet your faculty advisor to log attendance recovery sessions.`;
-            }
-          } else if (msg.includes('which subject') || msg.includes('subject-wise') || msg.includes('subjects am i below')) {
-            reply = `📋 **Subject-Wise Attendance Breakdown for ${st.name}:**\n\n` +
-              `- **CS601 - Design & Analysis of Algorithms**: ${st.overall_attendance >= 75 ? '86%' : '68%'} (Faculty: Dr. Kavitha Raman) &bull; ${st.overall_attendance >= 75 ? 'Safe' : 'Warning'}\n` +
-              `- **CS602 - Artificial Intelligence & Machine Learning**: ${st.overall_attendance >= 75 ? '82%' : '71%'} (Faculty: Dr. S. Vignesh) &bull; ${st.overall_attendance >= 75 ? 'Safe' : 'Warning'}\n` +
-              `- **CS603 - Database Engineering & Distributed Systems**: ${st.overall_attendance >= 75 ? '88%' : '62%'} (Faculty: Prof. R. Anand) &bull; ${st.overall_attendance >= 75 ? 'Safe' : 'High Risk'}\n\n` +
-              `*Overall Campus Attendance: **${st.overall_attendance}%** (${st.risk_status})*`;
-          } else {
-            reply = `📊 **Current Attendance Overview:**\n\n- **Overall Attendance:** **${st.overall_attendance}%**\n- **Standing:** **${st.risk_status}**\n- **Sessions Attended:** ${st.total_attended || 34} of ${st.total_conducted || 40} classes\n` +
-              (st.overall_attendance < 75
-                ? `\n⚠️ **Action Required:** You need to attend **${recCount} consecutive classes** to restore your standing above 75%. Parent notifications have been dispatched to **${st.parent_email}**.`
-                : `\n✅ You are in good standing for semester examination eligibility.`);
-          }
-          suggestions = ['Which subjects am I below 75%?', 'How many classes should I attend to reach 75%?', 'What is my timetable today?', 'When is my next exam?'];
-        }
-
-        // Timetable & Schedule
-        else if (msg.includes('timetable') || msg.includes('class') || msg.includes('today') || msg.includes('schedule') || msg.includes('period')) {
-          reply = `📅 **Today's Class Timetable (Semester 6, ${st.department_name || 'CSE'} Section ${st.section || 'A'}):**\n\n- **09:00 - 10:00 AM**: CS601 Design and Analysis of Algorithms (Hall 302 &bull; Dr. Kavitha Raman)\n- **10:15 - 11:15 AM**: CS602 Artificial Intelligence & ML (AI Lab 1 &bull; Dr. S. Vignesh)\n- **11:30 - 12:30 PM**: CS603 Database Engineering (Hall 304 &bull; Prof. R. Anand)\n- **01:30 - 03:30 PM**: CS604 Cloud Computing & DevOps Laboratory (Lab Block 3)`;
-          suggestions = ['What is my overall attendance?', 'When is my next examination?', 'Do I have any pending fees?', 'What assignments are due?'];
-        }
-
-        // Examinations
-        else if (msg.includes('exam') || msg.includes('cia') || msg.includes('mid-term') || msg.includes('test')) {
-          reply = `📝 **Upcoming Examination Schedule:**\n\n- **Exam:** CIA-2 Continuous Internal Assessment\n- **Subject:** CS601 - Design and Analysis of Algorithms\n- **Date:** In 6 days (Auditorium Block C)\n- **Timing:** 09:30 AM - 12:30 PM\n- **Format:** Descriptive & Problem Solving (60 Marks Total)\n\n*Make sure to maintain at least 75% attendance to receive your hall ticket!*`;
-          suggestions = ['What is my overall attendance?', 'What is my timetable today?', 'Show my internal marks', 'Do I have any pending fees?'];
-        }
-
-        // Fees
-        else if (msg.includes('fee') || msg.includes('dues') || msg.includes('tuition') || msg.includes('balance') || msg.includes('paid')) {
-          const isHighRisk = st.risk_status === 'High Risk';
-          const totalAmt = 85000;
-          const paidAmt = isHighRisk ? 70000 : 85000;
-          const pendingAmt = totalAmt - paidAmt;
-          reply = `💳 **Fee Details & Tuition Account for ${st.name}:**\n\n- **Academic Year:** 2025 - 2026 (Semester 6)\n- **Total Assessed Fees:** ₹${totalAmt.toLocaleString('en-IN')}\n- **Amount Paid:** ₹${paidAmt.toLocaleString('en-IN')}\n- **Pending Balance:** **₹${pendingAmt.toLocaleString('en-IN')}**\n- **Payment Status:** **${pendingAmt === 0 ? 'Fully Cleared (Paid)' : 'Pending ₹15,000'}**\n\n` +
-            (pendingAmt === 0
-              ? 'You can download your verified fee receipt directly from the Student Fees tab.'
-              : 'Please settle pending institutional dues before the examination hall ticket issuance deadline.');
-          suggestions = ['What is my overall attendance?', 'What is my timetable today?', 'When is my next exam?'];
-        }
-
-        // Placements
-        else if (msg.includes('placement') || msg.includes('job') || msg.includes('interview') || msg.includes('company') || msg.includes('salary') || msg.includes('lpa')) {
-          reply = `🚀 **Active Campus Placement Drives:**\n\n1. 🏢 **Amazon Web Services (AWS)**\n   - **Role:** Cloud Support Associate\n   - **Package:** **16.5 LPA**\n   - **Eligibility:** CSE, IT, ECE (CGPA >= 7.5, No active backlogs)\n   - **Deadline:** In 14 days\n\n2. 🏢 **Zoho Corporation**\n   - **Role:** Software Development Engineer\n   - **Package:** **12.0 LPA**\n   - **Eligibility:** CSE, IT (All eligible)\n   - **Deadline:** In 10 days\n\n*Register via the Campus Placements portal.*`;
-          suggestions = ['What is my overall attendance?', 'What classes do I have today?', 'When is my next exam?'];
-        }
-
-        // Assignments
-        else if (msg.includes('assignment') || msg.includes('homework') || msg.includes('submission')) {
-          reply = `📚 **Course Assignments Overview:**\n\n- **Full-Stack React + Supabase Cloud Mini-Project** (CS601):\n  - Max Marks: 10.0\n  - Status: Graded (Score: 9.5/10 &bull; Feedback: Outstanding architecture)\n- **DevOps CI/CD Pipeline Automation** (CS604):\n  - Due Date: Upcoming in 5 days\n  - Submission Format: PDF or GitHub / Google Drive link`;
-          suggestions = ['What is my overall attendance?', 'What is my timetable today?', 'When is my next exam?'];
-        }
-
-        // Quizzes
-        else if (msg.includes('quiz') || msg.includes('mcq')) {
-          reply = `✏️ **Quiz Assessments:**\n\n- **Quiz 1**: Asymptotic Notation & Recurrences &bull; Score: **10.0 / 10.0** (100%)\n- **Quiz 2**: Divide & Conquer Strategies &bull; Score: **7.5 / 10.0** (75%)\n\nYou can review complete question-by-question explanations in the Quizzes module.`;
-          suggestions = ['What is my overall attendance?', 'Show my internal marks', 'When is my next exam?'];
-        }
-
-        // Marks & CGPA
-        else if (msg.includes('mark') || msg.includes('grade') || msg.includes('cgpa') || msg.includes('internal')) {
-          reply = `🎯 **Internal Assessment Marks (Continuous Evaluation):**\n\n- **CS601 (Algorithms)**: Internal 1: 28/30 &bull; Internal 2: 27/30 &bull; Assignment: 9.5/10 &bull; Total: **55.0 / 60.0 (Grade: A+)**\n- **CS602 (AI & ML)**: Total: **51.5 / 60.0 (Grade: A)**\n- **CS603 (Database Systems)**: Total: **49.0 / 60.0 (Grade: A)**\n- **Estimated Cumulative GPA**: **8.74 / 10.0**`;
-          suggestions = ['When is my next examination?', 'What is my overall attendance?', 'What classes do I have today?'];
-        }
-
-        // Profile / Register details
-        else if (msg.includes('profile') || msg.includes('reg no') || msg.includes('who am i') || msg.includes('parent')) {
-          reply = `👤 **Academic Profile Information:**\n\n- **Name:** ${st.name}\n- **Register Number:** ${st.reg_no}\n- **Department:** ${st.department}\n- **Semester & Section:** Semester ${st.semester}, Section ${st.section}\n- **Student Email:** ${st.email || 'student@college.edu'}\n- **Registered Parent:** ${st.parent_name || 'Parent'} (${st.parent_email})\n- **Faculty Advisor:** Dr. Kavitha Raman`;
-          suggestions = ['What is my overall attendance?', 'What is my timetable today?', 'When is my next exam?'];
-        }
-
-        // Academic Doubts / Computer Science Knowledge Base / Explanations
-        else if (msg.includes('quicksort') || msg.includes('mergesort') || msg.includes('algorithm') || msg.includes('big o') || msg.includes('master theorem') || msg.includes('dijkstra') || msg.includes('dynamic programming') || msg.includes('recursion') || msg.includes('tree') || msg.includes('graph')) {
-          if (msg.includes('master theorem')) {
-            reply = `📐 **Master Theorem Formulation:**\n\nFor divide-and-conquer recurrences of form:\n` +
-              `$$T(n) = aT(n/b) + f(n)$$\nwhere $a \\ge 1$, $b > 1$:\n\n` +
-              `1. If $f(n) = O(n^{\\log_b a - \\epsilon})$, then **$T(n) = \\Theta(n^{\\log_b a})$**.\n` +
-              `2. If $f(n) = \\Theta(n^{\\log_b a})$, then **$T(n) = \\Theta(n^{\\log_b a} \\log n)$**.\n` +
-              `3. If $f(n) = \\Omega(n^{\\log_b a + \\epsilon})$ and regular, then **$T(n) = \\Theta(f(n))$**.\n\n` +
-              `*Example (MergeSort):* $T(n) = 2T(n/2) + O(n) \\implies a=2, b=2 \\implies n^{\\log_2 2} = n \\implies T(n) = O(n \\log n)$.`;
-          } else if (msg.includes('quicksort')) {
-            reply = `⚡ **QuickSort Algorithm Deep-Dive:**\n\n- **Paradigm:** Divide and Conquer using partitioning.\n- **Best / Average Time Complexity:** **$O(n \\log n)$**\n- **Worst-Case Time Complexity:** **$O(n^2)$** (occurs when pivot is smallest/largest element in already sorted array).\n- **Space Complexity:** $O(\\log n)$ auxiliary recursion stack.\n- **Optimization:** Use Randomized Pivot selection or Median-of-Three to prevent $O(n^2)$ worst-case.`;
-          } else if (msg.includes('dijkstra')) {
-            reply = `📍 **Dijkstra's Shortest Path Algorithm:**\n\n- **Purpose:** Finds single-source shortest paths in weighted directed/undirected graphs.\n- **Constraint:** **Edge weights must be non-negative** ($w(u,v) \\ge 0$). For negative edges, use Bellman-Ford.\n- **Time Complexity:** **$O((V + E) \\log V)$** with Min-Priority Queue (Fibonacci/Binary heap).\n- **Greedy Choice:** Always relaxes vertices with currently minimal tentative distance.`;
-          } else {
-            reply = `💡 **Academic Concept Explanation:**\n\nIn computer algorithms, efficiency is measured asymptotically using **Big-O ($O$)**, **Omega ($\\Omega$)**, and **Theta ($\\Theta$)** notations:\n- **Big-O**: Upper asymptotic bound (worst case guarantee).\n- **Theta**: Tight bound reflecting average/exact growth rate.\n\nWould you like a worked example, pseudocode, or recurrence derivation?`;
-          }
-          suggestions = ['Explain Master Theorem with example', 'QuickSort vs MergeSort comparison', 'What is my overall attendance?', 'What is my timetable today?'];
-        }
-
-        // Tanglish queries support
-        else if (msg.includes('enna') || msg.includes('epdi') || msg.includes('solunga') || msg.includes('puriyala') || msg.includes('tamil') || msg.includes('tanglish')) {
-          reply = `👋 **Vanakkam ${st.name}!**\n\nNeenga college ERP pathi enna doubt venaalum kekkalam:\n1. **Attendance**: Unga current overall attendance **${st.overall_attendance}%** irukku.\n2. **Timetable**: Inaiku CS601, CS602, CS603 classes schedule aagi irukku.\n3. **Exams**: CIA-2 exams in 6 days la start aaguthu.\n4. **Notes Doubt**: Engineering concepts puriyalana kooda kellinga, easy-ah explain pandren!\n\nEnna therinjukanum?`;
-          suggestions = ['What is my overall attendance?', 'What classes do I have today?', 'When is my next exam?', 'Do I have any pending fees?'];
-        }
-
-        // General fallback greeting
-        else {
-          reply = `Hello **${st.name}**! I am your **AI ERP Student Assistant**.\n\nI can answer questions about your academic records, attendance, and coursework. Here are some examples you can ask me:\n- *"What is my overall attendance?"*\n- *"How many classes should I attend to reach 75%?"*\n- *"What classes do I have today?"*\n- *"When is my next examination?"*\n- *"Do I have any pending fees?"*\n- *"Explain Master Theorem"*`;
-          suggestions = [
-            'What is my overall attendance?',
-            'What classes do I have today?',
-            'When is my next examination?',
-            'Do I have any pending fees?'
-          ];
-        }
-      }
+      const result = generateComprehensiveAIAnswer(rawMsg, st, role);
 
       return {
         data: {
-          reply,
-          engine: 'AI ERP Cloud Engine',
-          suggested_questions: suggestions
+          reply: result.reply,
+          engine: result.engine || 'AI ERP Intelligence Engine',
+          suggested_questions: result.suggestions || []
         }
       };
     }

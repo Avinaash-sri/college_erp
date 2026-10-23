@@ -32,14 +32,14 @@ export default function AIAssistant() {
   const [erpMessages, setErpMessages] = useState([
     {
       role: 'assistant',
-      content: "Hello! I am your **AI ERP Assistant**. You can ask me real-time questions about your attendance, recovery classes, class timetable, upcoming exams, fee balance, or campus placements.\n\nHow can I help you today?",
+      content: "Hello! I am your **AI Academic Copilot**. You can ask me anything about your classroom period attendance, absent dates, timetable, exams, fees, or any technical engineering and syllabus concepts.\n\nHow can I help you today?",
       suggested_questions: [
+        "Which period was I absent?",
         "What is my overall attendance?",
         "Which subjects am I below 75%?",
-        "How many classes should I attend to reach 75%?",
         "What is my timetable today?",
-        "When is my next exam?",
-        "Do I have any pending fees?"
+        "Explain QuickSort algorithm",
+        "How do I apply for OD or Medical leave?"
       ]
     }
   ]);
@@ -92,9 +92,10 @@ export default function AIAssistant() {
         role: 'assistant',
         content: "Chat cleared. What else would you like to know about your academic records?",
         suggested_questions: [
+          "Which period was I absent?",
           "What is my overall attendance?",
-          "How many classes should I attend to reach 75%?",
           "What is my timetable today?",
+          "Explain QuickSort algorithm",
           "When is my next exam?"
         ]
       }

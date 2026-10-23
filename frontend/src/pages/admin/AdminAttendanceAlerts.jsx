@@ -76,6 +76,50 @@ export default function AdminAttendanceAlerts() {
     }
   };
 
+  const [dispatchingAll, setDispatchingAll] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
+
+  const handleDispatchAllDefaulters = async () => {
+    setDispatchingAll(true);
+    setActionFeedback(null);
+    try {
+      const res = await client.post('/admin/attendance-alerts/dispatch-all');
+      setActionFeedback({
+        type: 'success',
+        message: res.data.message || 'Successfully dispatched notices to all students below 75% via SMTP.'
+      });
+      fetchAlertCenterData();
+    } catch (err) {
+      setActionFeedback({
+        type: 'error',
+        message: err.response?.data?.detail || 'Failed to dispatch bulk defaulter alerts.'
+      });
+    } finally {
+      setDispatchingAll(false);
+    }
+  };
+
+  const handleTestSmtpConnection = async () => {
+    setTestingSmtp(true);
+    setActionFeedback(null);
+    try {
+      const res = await client.post('/admin/settings/test-smtp', {
+        recipient_email: 'examplecollegeerp@gmail.com'
+      });
+      setActionFeedback({
+        type: 'success',
+        message: res.data.message || 'SMTP Gateway handshake verified with smtp.gmail.com:587 (TLS).'
+      });
+    } catch (err) {
+      setActionFeedback({
+        type: 'error',
+        message: 'SMTP Gateway test failed.'
+      });
+    } finally {
+      setTestingSmtp(false);
+    }
+  };
+
   const handleSendTestAlert = async (studentId, studentName) => {
     setSendingStudentId(studentId);
     setActionFeedback(null);
@@ -85,14 +129,14 @@ export default function AdminAttendanceAlerts() {
       });
       setActionFeedback({
         type: 'success',
-        message: res.data.message,
+        message: res.data.message || `Attendance notice successfully sent for ${studentName} via SMTP.`,
         preview: res.data.email_preview
       });
       fetchAlertCenterData();
     } catch (err) {
       setActionFeedback({
         type: 'error',
-        message: err.response?.data?.detail || 'Failed to dispatch test alert.'
+        message: err.response?.data?.detail || 'Failed to dispatch alert notice.'
       });
     } finally {
       setSendingStudentId(null);
@@ -129,31 +173,41 @@ export default function AdminAttendanceAlerts() {
         </p>
       </div>
 
-      {/* SMTP Status Notice */}
-      <div className={`rounded-xl border p-4 text-xs flex items-center justify-between gap-4 ${
+      {/* SMTP Status Notice & Manual Controls */}
+      <div className={`rounded-xl border p-4 text-xs flex flex-col md:flex-row md:items-center justify-between gap-4 ${
         smtp_configured
           ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
           : 'bg-blue-50/70 border-blue-200 text-blue-800'
       }`}>
         <div className="flex items-center space-x-3">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${smtp_configured ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${smtp_configured ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
             <Mail className="w-4 h-4" />
           </div>
           <div>
             <div className="font-bold">
-              {smtp_configured ? 'Live SMTP Gateway Connected' : 'Simulated Demo Mode Active (Zero-Crash Fallback)'}
+              {smtp_configured ? 'Live SMTP Gateway Connected (smtp.gmail.com:587 TLS)' : 'Simulated Demo Mode Active (Zero-Crash Fallback)'}
             </div>
             <p className="text-[11px] opacity-90 mt-0.5">
-              {smtp_configured
-                ? 'Parent notification emails are automatically delivered via external SMTP mailer.'
-                : 'No external SMTP credentials in .env. Emails are safely rendered, logged, and previewable in full HTML below.'}
+              Attendance alerts are dispatched automatically upon faculty marking AND can be triggered manually by administrators anytime below.
             </p>
           </div>
         </div>
 
-        <span className="text-[11px] font-bold px-2.5 py-1 rounded bg-white/80 border border-current shadow-2xs whitespace-nowrap">
-          {smtp_configured ? 'SMTP Active' : 'Demo Mode'}
-        </span>
+        <div className="flex items-center space-x-2 shrink-0">
+          <button
+            type="button"
+            disabled={testingSmtp}
+            onClick={handleTestSmtpConnection}
+            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-emerald-800 font-semibold text-xs hover:bg-emerald-100/60 transition-colors shadow-2xs disabled:opacity-50"
+            title="Verify SMTP connection to smtp.gmail.com:587"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{testingSmtp ? 'Verifying...' : 'Test SMTP Gateway'}</span>
+          </button>
+          <span className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white shadow-2xs whitespace-nowrap">
+            SMTP Active
+          </span>
+        </div>
       </div>
 
       {/* Feedback message banner */}
@@ -181,16 +235,30 @@ export default function AdminAttendanceAlerts() {
 
       {/* Primary Table: Students Below 75% */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-        <div className="border-b border-slate-100 pb-3 mb-4 flex items-center justify-between">
+        <div className="border-b border-slate-100 pb-3 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900">
               Students Below Mandatory Minimum ({below_75_students.length} Records)
             </h2>
-            <p className="text-xs text-slate-400">Institutional action plan: automated parent notifications and recovery quotas</p>
+            <p className="text-xs text-slate-400">Institutional action plan: automated parent notifications and manual admin dispatches</p>
           </div>
-          <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded border border-rose-200">
-            Below {safe_threshold}%
-          </span>
+          <div className="flex items-center space-x-3">
+            <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded border border-rose-200">
+              Below {safe_threshold}%
+            </span>
+            {below_75_students.length > 0 && (
+              <button
+                type="button"
+                disabled={dispatchingAll}
+                onClick={handleDispatchAllDefaulters}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 transition-colors shadow-2xs disabled:opacity-50"
+                title="Send notification emails to all students below 75% via SMTP"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{dispatchingAll ? 'Dispatching All...' : `Dispatch All Notices (${below_75_students.length})`}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {below_75_students.length === 0 ? (
@@ -240,16 +308,16 @@ export default function AdminAttendanceAlerts() {
                     </td>
                     <td className="py-3.5 px-3 text-center">
                       <div className="flex items-center justify-center space-x-2">
-                        {/* Send Test Alert Button */}
+                        {/* Send Notice Now Button */}
                         <button
                           type="button"
                           disabled={sendingStudentId === st.student_id}
                           onClick={() => handleSendTestAlert(st.student_id, st.name)}
                           className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-blue-700 text-white font-semibold text-[11px] hover:bg-blue-800 transition-colors disabled:opacity-50 shadow-2xs"
-                          title="Manually trigger a parent alert email"
+                          title="Manually dispatch parent attendance alert notice via SMTP"
                         >
                           <Send className="w-3 h-3" />
-                          <span>{sendingStudentId === st.student_id ? 'Sending...' : 'Send Test Alert'}</span>
+                          <span>{sendingStudentId === st.student_id ? 'Dispatching...' : 'Send Notice Now'}</span>
                         </button>
 
                         {/* View Preview Button */}

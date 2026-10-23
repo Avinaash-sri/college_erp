@@ -9,7 +9,7 @@ from app.database import engine, Base, SessionLocal, get_db
 from app.seed_data import seed_database
 from app.migrate_db import apply_database_migrations
 from app.assignment_scheduler import start_assignment_scheduler, stop_assignment_scheduler
-from app.routers import auth, students, faculty, admin, chat, quizzes, assignments, announcements, notes_ai
+from app.routers import auth, students, faculty, admin, chat, quizzes, assignments, announcements, notes_ai, direct_api
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("erp_main")
@@ -91,6 +91,7 @@ app.include_router(quizzes.router)
 app.include_router(assignments.router)
 app.include_router(announcements.router)
 app.include_router(notes_ai.router)
+app.include_router(direct_api.router)
 
 @app.get("/")
 def root():

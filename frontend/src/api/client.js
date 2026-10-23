@@ -88,7 +88,8 @@ let stateDocuments = getStored('documents', [
     filename: 'Unit_1_Algorithm_Analysis_Lecture_Notes.pdf',
     file_type: 'pdf',
     file_size: 245000,
-    summary: '### Key Concepts in Algorithm Analysis\n\n- **Asymptotic Notations**: O, Omega, and Theta define tight bounds for time and space.\n- **Divide and Conquer**: Solves subproblems recursively and combines results (MergeSort, QuickSort).\n- **Recurrence Relations**: Solved via Master Theorem and substitution methods.\n\n### Revision Points\n- Master Theorem applies only to recurrences of form T(n) = aT(n/b) + f(n).\n- QuickSort average complexity is O(n log n); worst case is O(n^2).',
+    total_chunks: 12,
+    summary: '### Key Concepts in Algorithm Analysis\n\n- **Asymptotic Notations**: O, Omega, and Theta define tight bounds for time and space.\n\n- **Divide and Conquer**: Solves subproblems recursively and combines results (MergeSort, QuickSort).\n\n- **Recurrence Relations**: Solved via Master Theorem and substitution methods.\n\n### Revision Points\n- Master Theorem applies only to recurrences of form T(n) = aT(n/b) + f(n).\n- QuickSort average complexity is O(n log n); worst case is O(n^2).',
     created_at: new Date(Date.now() - 86400000 * 3).toISOString()
   }
 ]);
@@ -1444,13 +1445,31 @@ const client = {
       const file = data instanceof FormData ? data.get('file') : null;
       const fileName = file ? file.name : 'Uploaded_Lecture_Notes.pdf';
       const fileType = fileName.split('.').pop().toLowerCase();
+      const fileSize = file ? file.size : 185000;
+      const chunks = Math.max(3, Math.ceil(fileSize / 1024 / 25));
+
+      const isAlgo = /algo|divide|sort|recur|graph|tree/i.test(fileName);
+      const isDb = /db|data|sql|schema|table|query/i.test(fileName);
+      const isOs = /os|operat|concur|thread|process|memory|sched/i.test(fileName);
+
+      let initialSummary = '';
+      if (isAlgo) {
+        initialSummary = `### 📘 Comprehensive Syllabus Summary: ${fileName}\n\n- **Core Theme**: Design and analysis of algorithmic strategies, recursive divide-and-conquer, dynamic programming, and asymptotic bounds.\n- **Essential Theorems & Equations**:\n  - **Master Theorem**: Solves $T(n) = aT(n/b) + f(n)$ to derive $O(n^{\\log_b a})$.\n  - **Sorting Efficiency**: QuickSort average $\\mathcal{O}(n \\log n)$, worst case $\\mathcal{O}(n^2)$; MergeSort guaranteed $\\mathcal{O}(n \\log n)$.\n- **Practical Exam Checklist**:\n  - Derive substitution bounds for recursive trees.\n  - Verify Dijkstra greedy choice correctness on non-negative weighted graphs.`;
+      } else if (isDb) {
+        initialSummary = `### 📘 Comprehensive Syllabus Summary: ${fileName}\n\n- **Core Theme**: Relational database engineering, normal forms (1NF through BCNF), indexing (B+ Trees), and ACID transaction guarantees.\n- **Essential Principles**:\n  - **Indexing**: Clustered vs secondary B+ Tree indexing accelerates query retrieval from $\\mathcal{O}(N)$ to $\\mathcal{O}(\\log N)$.\n  - **Transactions**: Strict Two-Phase Locking (2PL) guarantees serializability and prevents dirty reads.\n- **Practical Exam Checklist**:\n  - Decompose unnormalized relations into 3NF/BCNF without loss of functional dependencies.\n  - Formulate optimal SQL queries utilizing composite indexes.`;
+      } else if (isOs) {
+        initialSummary = `### 📘 Comprehensive Syllabus Summary: ${fileName}\n\n- **Core Theme**: Operating system architecture, CPU process scheduling, mutual exclusion concurrency, virtual memory paging, and deadlock handling.\n- **Essential Principles**:\n  - **Synchronization**: Semaphores and mutex locks eliminate race conditions in shared memory.\n  - **Deadlock Conditions**: Mutual exclusion, hold-and-wait, no preemption, and circular wait.\n- **Practical Exam Checklist**:\n  - Solve Banker's algorithm safe-state resource allocation.\n  - Calculate page fault ratios across FIFO, LRU, and Optimal replacement algorithms.`;
+      } else {
+        initialSummary = `### 📘 Comprehensive Syllabus Summary: ${fileName}\n\n- **Core Theme**: Systematic theoretical foundations, engineering problem decomposition, and practical implementation standards.\n- **Core Principles**:\n  - **Modular Architecture**: Decoupled high-cohesion subcomponents ensuring maintainability.\n  - **Performance Optimization**: Balancing memory overhead against latency and throughput.\n- **Practical Exam Checklist**:\n  - Memorize precise university 2-mark definitions.\n  - Practice complete structural flow diagrams and architectural workflows.`;
+      }
 
       const newDoc = {
         id: stateDocuments.length + 1,
         filename: fileName,
         file_type: fileType,
-        file_size: file ? file.size : 150000,
-        summary: `### Comprehensive Document Summary: ${fileName}\n\n- **Core Theme**: High-level principles, architectural patterns, and practical implementation guidelines.\n- **Key Definitions**:\n  - **Encapsulation & Modularity**: Decoupling components to ensure high cohesion and maintainability.\n  - **Scalability**: Scaling horizontally via stateless microservices and partitioned databases.\n- **Revision Takeaways**:\n  - Review all algorithmic trade-offs before examination.\n  - Ensure familiarity with time and space complexity bounds.`,
+        file_size: fileSize,
+        total_chunks: chunks,
+        summary: initialSummary,
         created_at: new Date().toISOString()
       };
 
@@ -1459,25 +1478,128 @@ const client = {
       return { data: newDoc };
     }
 
-    // AI Document Action (QA, Summarize, Revision points)
+    // AI Document Action (QA, Summarize, Revision points, Tanglish, MCQs)
     if (url.startsWith('/students/me/notes/') && url.endsWith('/action')) {
+      const parts = url.split('/');
+      const docId = parseInt(parts[4]);
+      const doc = stateDocuments.find((d) => d.id === docId);
+      const docName = doc ? doc.filename : 'Lecture Notes';
       const { action, query, topic } = data;
       let reply = '';
 
+      const isAlgo = /algo|divide|sort|recur|graph|tree/i.test(docName);
+      const isDb = /db|data|sql|schema|table|query/i.test(docName);
+
       if (action === 'summarise_full') {
-        reply = '### Document Summary\n\n- **Key Topics Covered**: Algorithms, Complexity Analysis, Big-O Notation, Recurrence Relations.\n- **Primary Takeaways**: Master Theorem enables rapid asymptotic calculation; Floyd Algorithm constructs heaps in linear time.\n- **Study Recommendation**: Focus on edge cases in recurrence bounds.';
+        if (isAlgo) {
+          reply = `### 📘 Executive Academic Summary: ${docName}\n\n` +
+            `#### 1. Scope & Theoretical Framework\n` +
+            `This unit focuses on rigorous algorithm design paradigms, computational complexity analysis, asymptotic bounds, and recurrence relations for university examinations.\n\n` +
+            `#### 2. Key Modules Covered\n` +
+            `- **Asymptotic Notations**: $\\mathcal{O}$ (Big-O upper bound), $\\Omega$ (lower bound), $\\Theta$ (tight bound) characterising asymptotic growth.\n` +
+            `- **Divide & Conquer**: Recursive decomposition of inputs, conquer phase, and linear merge combination (MergeSort, QuickSort).\n` +
+            `- **Greedy & Dynamic Programming**: Optimal substructure identification, memoization tables, and fractional knapsack vs 0/1 knapsack.\n` +
+            `- **Graph Algorithms**: Dijkstra single-source shortest path, Prim's and Kruskal's Minimum Spanning Tree algorithms.\n\n` +
+            `#### 3. High-Yield Exam Formulas & Complexity Bounds\n` +
+            `- **Master Theorem**: For $T(n) = aT(n/b) + f(n)$, compare $f(n)$ with $n^{\\log_b a}$.\n` +
+            `- **QuickSort Complexity**: Best/Average $\\mathcal{O}(n \\log n)$, Worst $\\mathcal{O}(n^2)$ with recursion stack space $\\mathcal{O}(\\log n)$.\n` +
+            `- **Dijkstra Complexity**: $\\mathcal{O}((V + E) \\log V)$ using Min-Priority Queue.`;
+        } else if (isDb) {
+          reply = `### 📘 Executive Academic Summary: ${docName}\n\n` +
+            `#### 1. Scope & Theoretical Framework\n` +
+            `Covers relational database systems, schema normalization, index structures, query optimization, and ACID transaction concurrency.\n\n` +
+            `#### 2. Key Modules Covered\n` +
+            `- **Relational Model & Algebra**: Tuples, domains, selection ($\\sigma$), projection ($\\pi$), and Cartesian joins ($\\bowtie$).\n` +
+            `- **Normalization**: Functional dependency closures, 1NF, 2NF (eliminating partial dependencies), 3NF (eliminating transitive dependencies), and BCNF.\n` +
+            `- **Storage & Indexing**: B+ Tree index structures with fan-out balanced height guaranteeing $\\mathcal{O}(\\log_B N)$ retrieval.\n` +
+            `- **Transactions & ACID**: Atomicity, Consistency, Isolation, Durability via Write-Ahead Logging (WAL) and 2-Phase Locking (2PL).\n\n` +
+            `#### 3. High-Yield Exam Formulas\n` +
+            `- **Lossless Join Test**: $R_1 \\cap R_2 \\rightarrow R_1$ or $R_1 \\cap R_2 \\rightarrow R_2$.\n` +
+            `- **B+ Tree Node Capacity**: Each internal node contains between $\\lceil M/2 \\rceil$ and $M$ pointers.`;
+        } else {
+          reply = `### 📘 Executive Academic Summary: ${docName}\n\n` +
+            `#### 1. Scope & Core Objectives\n` +
+            `This study module presents core computational foundations, architectural abstractions, and design trade-offs structured for examination preparation.\n\n` +
+            `#### 2. Primary Engineering Modules\n` +
+            `- **Architectural Models**: Component modularity, decoupled interfaces, and high-cohesion design patterns.\n` +
+            `- **Operational Reliability**: Fault tolerance, error containment, and transactional integrity guarantees.\n` +
+            `- **Resource Efficiency**: Optimizing space complexity against computational throughput and network latency.\n\n` +
+            `#### 3. Revision Takeaways\n` +
+            `- Review all foundational definitions and terminology.\n` +
+            `- Practice analytical proofs and structural block diagrams for 16-mark university exam questions.`;
+        }
       } else if (action === 'key_concepts') {
-        reply = '### 5 Core Concepts Highlighted\n\n1. **Time-Space Tradeoff**: Memory overhead versus execution latency.\n2. **Divide and Conquer**: Recursive decomposition of inputs.\n3. **Optimal Substructure**: Crucial property for greedy and dynamic programming solutions.\n4. **Asymptotic Dominance**: High-order terms dictate asymptotic performance.\n5. **Partition Tolerance**: Distributed state management in cloud environments.';
-      } else if (action === 'exam_revision') {
-        reply = '### High-Priority Exam Revision Checklist\n\n- [ ] State Master Theorem formulas and conditions.\n- [ ] Trace QuickSort partition subroutine.\n- [ ] Prove Dijkstra shortest-path correctness on non-negative weights.\n- [ ] Compare BFS and DFS queue vs stack complexities.';
-      } else if (action === 'tanglish_explain') {
-        reply = '### Concept Explanation (Tanglish)\n\nIntha document la main concepts enna-na:\n1. **Algorithms Performance**: Oru program run aaga evvalavu time edukkum-nu calculate pandrathu thaan Asymptotic notation.\n2. **Best Practice**: Loops nested-aa iruntha O(n^2) aagum, athanaala efficient data structures use pannanum!\n3. **Exam Tip**: Definitions and formula derivation-ah nalla nyabagam vechikonga.';
+        reply = `### 🔑 5 Essential Core Concepts: ${docName}\n\n` +
+          `1. **Asymptotic Complexity & Scaling**: Distinguishing polynomial growth from exponential/logarithmic curves to evaluate computational cost.\n\n` +
+          `2. **Recursive Decomposition & Invariants**: Formulating loop and recursion invariants that guarantee algorithm termination and correctness.\n\n` +
+          `3. **Optimal Substructure**: The principle that the optimal solution to a problem contains optimal solutions to its subproblems (crucial for Greedy and Dynamic Programming).\n\n` +
+          `4. **Data Locality & Index Structures**: Organizing memory and disk blocks into hierarchically balanced trees to minimize I/O bus bottlenecks.\n\n` +
+          `5. **Trade-Off Optimization**: Sacrificing auxiliary space (e.g. hash tables or memoization arrays) to reduce time complexity from $\\mathcal{O}(n^2)$ down to $\\mathcal{O}(n)$ or $\\mathcal{O}(1)$.`;
+      } else if (action === 'explain_tanglish' || action === 'tanglish_explain') {
+        reply = `### 🌟 Simple Concept Explanation in Tanglish: ${docName}\n\n` +
+          `Intha lecture notes-oda mukkiyamana points-ah romba simple-ah paakalam:\n\n` +
+          `1. **Main Purpose (Enna solla varanga?)**:\n` +
+          `   - Engineering-la oru periya problem-ah epdi chinna chinna steps-ah pirichu, romba kammi time-layum memory-layum solve pannanum-nu intha document explain pannuthu.\n\n` +
+          `2. **Performance (Time & Space Complexity)**:\n` +
+          `   - Oru program fast-ah run aaguma illaya nu check panna Asymptotic Notation (Big-O) use pandrom. Nested loops iruntha time complexity $\\mathcal{O}(n^2)$ aagidum, so divide and conquer use panni $\\mathcal{O}(n \\log n)$-ah koraikirom.\n\n` +
+          `3. **Real-Life Example**:\n` +
+          `   - Oruthar kita phone directory irukku. A-la irunthu Z varaikum page-by-page theduna athu Linear Search (slow). Aana nadula open panni half-half-ah filter panna athu Binary Search (super fast)!\n\n` +
+          `4. **Exam Tip**:\n` +
+          `   - Formulas matrum algorithm steps-ah neat-ah points pottu ezhuthunga. Full marks kedaikum!`;
+      } else if (action === 'explain_english') {
+        reply = `### 💡 Plain English Conceptual Breakdown (ELI5)\n\n` +
+          `Here is what **${docName}** means in plain, intuitive everyday language:\n\n` +
+          `- **The Big Idea**: Computers have finite time and memory. This document teaches you how to write code that solves massive problems without freezing or crashing the system.\n\n` +
+          `- **The Core Principle (Divide & Conquer)**: Instead of tackling a huge messy task all at once, break it into two halves, solve each half independently, and seamlessly stitch the results back together.\n\n` +
+          `- **Real-World Analogy**: Think of sorting a messy deck of 100 cards. Sorting all 100 one-by-one takes forever. But split the deck among four friends, sort the small piles, and zipper-merge them together in seconds!\n\n` +
+          `- **Key Takeaway**: Always choose algorithms that scale smoothly as your data grows from 10 items to 10 million items.`;
+      } else if (action === 'generate_mcqs') {
+        reply = `### 📝 University Practice MCQs: ${docName}\n\n` +
+          `**Q1. What is the worst-case time complexity of standard QuickSort?**\n` +
+          `- A) $\\mathcal{O}(n)$\n` +
+          `- B) $\\mathcal{O}(n \\log n)$\n` +
+          `- C) $\\mathcal{O}(n^2)$\n` +
+          `- D) $\\mathcal{O}(\\log n)$\n` +
+          `*Correct Answer:* **C) $\\mathcal{O}(n^2)$** — Occurs when the pivot chosen is consistently the extreme (smallest or largest) element in an already sorted or reverse-sorted array.\n\n` +
+          `**Q2. Which condition is mandatory for Dijkstra's shortest path algorithm to yield correct results?**\n` +
+          `- A) Graph must be directed acyclic\n` +
+          `- B) All edge weights must be non-negative\n` +
+          `- C) Graph must be fully connected\n` +
+          `- D) Vertices count must equal edges count\n` +
+          `*Correct Answer:* **B) All edge weights must be non-negative** — Greedy relaxation fails when negative edges can retroactively decrease path costs.\n\n` +
+          `**Q3. What is the height of a balanced B+ Tree containing $N$ records with fan-out $B$?**\n` +
+          `- A) $\\mathcal{O}(N)$\n` +
+          `- B) $\\mathcal{O}(\\log_B N)$\n` +
+          `- C) $\\mathcal{O}(B)$\n` +
+          `- D) $\\mathcal{O}(N^2)$\n` +
+          `*Correct Answer:* **B) $\\mathcal{O}(\\log_B N)$** — B+ Trees maintain balance where all leaves reside at equal depth.`;
+      } else if (action === 'revision_checklist' || action === 'exam_revision') {
+        reply = `### 🎯 High-Priority University Exam Revision Checklist\n\n` +
+          `- [ ] **State Master Theorem**: Memorize the three cases for $T(n) = aT(n/b) + f(n)$ and know when it is not applicable.\n` +
+          `- [ ] **QuickSort Partition Subroutine**: Trace partition step-by-step with array $[38, 27, 43, 3, 9, 82, 10]$.\n` +
+          `- [ ] **Dynamic Programming vs Greedy**: Write 3 clear distinction points (Memoization vs irrevocable greedy choice).\n` +
+          `- [ ] **B+ Tree Node Insertion & Splitting**: Practice drawing node splitting when exceeding order $M$.\n` +
+          `- [ ] **ACID Properties**: Define Atomicity, Consistency, Isolation, and Durability with a bank transfer example.\n` +
+          `- [ ] **2-Mark Quick Definitions**: Big-O, Theta, Asymptotic Upper Bound, Functional Dependency, Serializability.`;
       } else {
         // Grounded Q&A
-        if (query && (query.toLowerCase().includes('what') || query.toLowerCase().includes('explain') || query.toLowerCase().includes('how'))) {
-          reply = `Based on the uploaded document notes, **${query}** is addressed through systematic mathematical proofs and practical algorithmic workflows. All asymptotic bounds discussed conform to standard curriculum specifications.\n\n*Source: Unit Lecture Notes, Section 2.*`;
+        const qLower = (query || '').toLowerCase();
+        if (qLower.includes('quicksort') || qLower.includes('sort')) {
+          reply = `### QuickSort Algorithm Deep-Dive\n\n- **Paradigm**: Divide and Conquer using in-place partitioning.\n- **Recurrence**: $T(n) = T(k) + T(n - k - 1) + \\Theta(n)$.\n- **Complexities**:\n  - Best Case: $\\mathcal{O}(n \\log n)$ when partition evenly halves array.\n  - Average Case: $\\mathcal{O}(n \\log n)$.\n  - Worst Case: $\\mathcal{O}(n^2)$ when pivot is always min/max.\n- **Space**: $\\mathcal{O}(\\log n)$ recursion stack frames.\n- **Optimization Tip**: Use Randomized Partitioning or Median-of-Three to eliminate worst case.`;
+        } else if (qLower.includes('master theorem') || qLower.includes('recurrence')) {
+          reply = `### Master Theorem Explanation & Formulation\n\nGiven $T(n) = aT(n/b) + f(n)$ with $a \\ge 1, b > 1$:\n\n1. **Case 1**: If $f(n) = \\mathcal{O}(n^{\\log_b a - \\epsilon})$, then $T(n) = \\Theta(n^{\\log_b a})$.\n2. **Case 2**: If $f(n) = \\Theta(n^{\\log_b a})$, then $T(n) = \\Theta(n^{\\log_b a} \\log n)$.\n3. **Case 3**: If $f(n) = \\Omega(n^{\\log_b a + \\epsilon})$ and satisfies regularity condition $af(n/b) \\le cf(n)$, then $T(n) = \\Theta(f(n))$.\n\n*Worked Example (MergeSort)*: $T(n) = 2T(n/2) + \\Theta(n)$. Here $a=2, b=2, \\log_2 2 = 1$. Since $f(n) = \\Theta(n^1)$, Case 2 applies $\\implies T(n) = \\Theta(n \\log n)$.`;
+        } else if (qLower.includes('dijkstra') || qLower.includes('graph')) {
+          reply = `### Dijkstra's Shortest Path Algorithm\n\n- **Objective**: Finds the shortest paths from a single source vertex to all other vertices in a weighted graph.\n- **Requirement**: Edge weights must be strictly **non-negative** ($w(u, v) \\ge 0$).\n- **Data Structure**: Priority Queue (Binary Heap / Fibonacci Heap).\n- **Running Time**: $\\mathcal{O}((V + E) \\log V)$.\n- **Invariant**: Once a vertex is extracted from the priority queue, its tentative distance is finalized and guaranteed optimal.`;
+        } else if (qLower.includes('index') || qLower.includes('database') || qLower.includes('sql') || qLower.includes('b+')) {
+          reply = `### Database Indexing & B+ Trees\n\n- **Clustered Index**: Determines the physical ordering of data pages on disk. Only one clustered index can exist per table (usually Primary Key).\n- **Non-Clustered (Secondary) Index**: Stores key values pointing to row identifiers (RIDs) without reordering data blocks.\n- **B+ Tree Architecture**: Leaves contain data pointers and are doubly linked for sequential range scans; internal nodes contain only routing keys. Search time is $\\mathcal{O}(\\log_B N)$.`;
+        } else if (query && query.trim().length > 0) {
+          reply = `### Academic Analysis: "${query}"\n\n` +
+            `Based on the selected syllabus document (**${docName}**):\n\n` +
+            `1. **Core Definition**: **${query}** represents a fundamental engineering concept analyzed through formal specifications, mathematical invariants, and systematic algorithmic decomposition.\n\n` +
+            `2. **Operational Workflow**: The mechanism operates within predefined boundary conditions, maintaining time efficiency $\\mathcal{O}(n \\log n)$ and minimizing auxiliary memory overhead.\n\n` +
+            `3. **Exam Application**: In university assessments, formulate your answer with the formal definition, an illustrative step-by-step trace diagram, and the asymptotic space/time complexity bounds.`;
         } else {
-          reply = "The uploaded document does not contain enough information to answer this question. Please refer to authorized college course materials.";
+          reply = "Please ask a specific conceptual or syllabus question about this document.";
         }
       }
 
@@ -1485,7 +1607,7 @@ const client = {
         data: {
           result: reply,
           response: reply,
-          sources: ['Page 2, Paragraph 1', 'Page 5, Section 3.2']
+          sources: [`${docName}, Unit 1 &bull; Section 2`, `${docName}, Unit 2 &bull; Key Theorems`]
         }
       };
     }

@@ -132,8 +132,8 @@ export default function App() {
       <Routes>
       <Route path="/login" element={<LoginPage />} />
 
-      {/* Root redirect based on role */}
-      <Route path="/" element={<RoleHomeRedirect />} />
+      {/* Root path always opens the login page as requested */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
 
       {/* Authenticated Layout Routes */}
       <Route

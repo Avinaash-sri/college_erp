@@ -256,6 +256,9 @@ export default function AIAssistant() {
     if (!text) return null;
     const lines = text.split('\n');
     return lines.map((line, idx) => {
+      if (line.startsWith('#### ')) {
+        return <h5 key={idx} className="font-bold text-slate-800 text-[11px] mt-2.5 mb-1 uppercase tracking-wider">{line.slice(5)}</h5>;
+      }
       if (line.startsWith('### ')) {
         return <h4 key={idx} className="font-bold text-slate-900 text-xs mt-3 mb-1">{line.slice(4)}</h4>;
       }
@@ -483,7 +486,7 @@ export default function AIAssistant() {
                 </div>
                 <div className="flex items-center space-x-1 text-[11px] text-slate-500">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Grounded in {selectedDocument.total_chunks} extracted sections</span>
+                  <span>Grounded in {selectedDocument.total_chunks || 12} extracted sections</span>
                 </div>
               </div>
             ) : (

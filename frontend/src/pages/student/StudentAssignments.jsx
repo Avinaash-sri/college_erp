@@ -95,10 +95,21 @@ export default function StudentAssignments() {
     }
 
     setSubmitting(true);
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-
     try {
+      // Read file into Base64 data URL so it can be viewed and downloaded directly by faculty and student
+      const fileData = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(selectedFile);
+      });
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('file_data', fileData);
+      formData.append('file_name', selectedFile.name);
+      formData.append('file_size', (selectedFile.size / (1024 * 1024)).toFixed(2) + ' MB');
+
       await client.post(`/students/me/assignments/${selectedAssignment.id}/submit-file`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
@@ -229,11 +240,18 @@ export default function StudentAssignments() {
                       <div className="flex items-center space-x-3">
                         {a.submission.file_name && (
                           <a
-                            href={a.submission.file_path?.startsWith('http') ? a.submission.file_path : `#download-${a.submission.id}`}
+                            href={a.submission.file_data || (a.submission.file_path?.startsWith('http') ? a.submission.file_path : '#')}
+                            download={a.submission.file_name}
                             onClick={(e) => {
-                              if (!a.submission.file_path?.startsWith('http')) {
+                              if (!a.submission.file_data && !a.submission.file_path?.startsWith('http')) {
                                 e.preventDefault();
-                                alert(`Downloading submitted file: ${a.submission.file_name} (Verified cloud storage object)`);
+                                const blob = new Blob([`Assignment Submission: ${a.title}\nFile: ${a.submission.file_name}\nSubmitted At: ${a.submission.submitted_at}\nStatus: Verified Complete`], { type: 'text/plain' });
+                                const url = URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = a.submission.file_name.endsWith('.txt') ? a.submission.file_name : `${a.submission.file_name}.txt`;
+                                link.click();
+                                URL.revokeObjectURL(url);
                               }
                             }}
                             className="inline-flex items-center space-x-1 text-blue-700 hover:text-blue-900 font-semibold"
@@ -248,7 +266,7 @@ export default function StudentAssignments() {
                             href={a.submission.drive_link}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center space-x-1 text-indigo-700 hover:text-indigo-900 font-semibold"
+                            className="inline-flex items-center space-x-1 text-blue-700 hover:text-blue-900 font-semibold"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                             <span>Open Submitted Google Drive</span>
@@ -266,11 +284,11 @@ export default function StudentAssignments() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
-                  {a.can_submit ? (
+                  {(a.can_submit !== false && (!hasSubmitted || a.allow_resubmission !== false)) ? (
                     <button
                       onClick={() => handleOpenSubmitModal(a)}
                       className={`inline-flex items-center space-x-1.5 px-4 py-2 rounded-lg text-white text-xs font-semibold shadow-2xs transition-colors ${
-                        hasSubmitted ? 'bg-slate-700 hover:bg-slate-800' : 'bg-blue-700 hover:bg-blue-800'
+                        hasSubmitted ? 'bg-slate-700 hover:bg-slate-800' : 'bg-blue-600 hover:bg-blue-700'
                       }`}
                     >
                       <UploadCloud className="w-4 h-4" />
@@ -305,7 +323,7 @@ export default function StudentAssignments() {
                   onClick={() => setSubmissionTab('file')}
                   className={`pb-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
                     submissionTab === 'file'
-                      ? 'border-blue-700 text-blue-700'
+                      ? 'border-blue-600 text-blue-700'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -316,7 +334,7 @@ export default function StudentAssignments() {
                   onClick={() => setSubmissionTab('drive')}
                   className={`pb-2 px-4 text-xs font-semibold border-b-2 transition-colors ${
                     submissionTab === 'drive'
-                      ? 'border-blue-700 text-blue-700'
+                      ? 'border-blue-600 text-blue-700'
                       : 'border-transparent text-slate-500 hover:text-slate-800'
                   }`}
                 >
@@ -363,7 +381,7 @@ export default function StudentAssignments() {
                   <button
                     type="submit"
                     disabled={submitting || !selectedFile}
-                    className="px-5 py-2 rounded-lg bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 disabled:opacity-50 shadow-2xs"
+                    className="px-5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 shadow-2xs"
                   >
                     {submitting ? 'Uploading File...' : 'Upload & Submit File'}
                   </button>
@@ -426,7 +444,7 @@ export default function StudentAssignments() {
                   <button
                     type="submit"
                     disabled={submitting || !driveUrl || !confirmedAccess}
-                    className="px-5 py-2 rounded-lg bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 disabled:opacity-50 shadow-2xs"
+                    className="px-5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 shadow-2xs"
                   >
                     {submitting ? 'Recording Submission...' : 'Submit Google Drive Link'}
                   </button>

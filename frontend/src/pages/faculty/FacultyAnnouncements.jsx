@@ -94,7 +94,7 @@ export default function FacultyAnnouncements() {
           <button
             type="submit"
             disabled={submitting}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 transition-colors shadow-xs disabled:opacity-50"
+            className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-xs disabled:opacity-50"
           >
             <Send className="w-3.5 h-3.5" />
             <span>{submitting ? 'Broadcasting Notice...' : 'Broadcast Announcement'}</span>

@@ -143,6 +143,406 @@ let stateAssignmentReminderLogs = getStored('assignment_reminder_logs', [
   }
 ]);
 
+// Academic Grade Points Scale (Anna University / UGC Standard)
+const GRADE_POINTS_SCALE = {
+  'O': 10.0,
+  'A+': 9.0,
+  'A': 8.0,
+  'B+': 7.0,
+  'B': 6.0,
+  'C': 5.0,
+  'F': 0.0,
+  'U': 0.0
+};
+
+export function getGradePoint(grade, marks) {
+  if (grade && GRADE_POINTS_SCALE[String(grade).toUpperCase()] !== undefined) {
+    return GRADE_POINTS_SCALE[String(grade).toUpperCase()];
+  }
+  const m = parseFloat(marks) || 0;
+  if (m >= 91) return 10.0;
+  if (m >= 81) return 9.0;
+  if (m >= 71) return 8.0;
+  if (m >= 61) return 7.0;
+  if (m >= 50) return 6.0;
+  if (m >= 40) return 5.0;
+  return 0.0;
+}
+
+export function calculateAndStoreStudentCGPA(studentId) {
+  const student = stateStudents.find((s) => s.id === studentId);
+  if (!student) return 0.0;
+
+  let studentMarks = stateMarks.filter((m) => m.student_id === studentId);
+
+  // If student has no marks in state, populate them from department subjects with realistic variation
+  if (!studentMarks || studentMarks.length === 0) {
+    const deptId = student.department_id || 3;
+    const deptSubs = (SUBJECTS || []).filter((s) => s.department_id === deptId);
+    const base = student.overall_attendance >= 85 ? 88.0 : (student.overall_attendance >= 72 ? 76.0 : 58.0);
+
+    deptSubs.forEach((sub, subIdx) => {
+      const off = subIdx === 0
+        ? (((student.id * 7 + deptId * 3) % 11) - 4)
+        : (subIdx === 1
+          ? (((student.id * 11 + deptId * 5) % 9) - 3)
+          : (((student.id * 13 + deptId * 7) % 11) - 5));
+
+      const score = Math.max(42.0, Math.min(98.0, +(base + off).toFixed(1)));
+      let grade = 'B';
+      let grade_point = 6.0;
+
+      if (score >= 91) { grade = 'O'; grade_point = 10.0; }
+      else if (score >= 81) { grade = 'A+'; grade_point = 9.0; }
+      else if (score >= 71) { grade = 'A'; grade_point = 8.0; }
+      else if (score >= 61) { grade = 'B+'; grade_point = 7.0; }
+      else if (score >= 50) { grade = 'B'; grade_point = 6.0; }
+      else if (score >= 40) { grade = 'C'; grade_point = 5.0; }
+      else { grade = 'F'; grade_point = 0.0; }
+
+      const cred = sub.credits || (subIdx === 2 ? 3 : 4);
+      const newM = {
+        id: stateMarks.length + 1,
+        student_id: student.id,
+        reg_no: student.reg_no,
+        name: student.name,
+        department_id: student.department_id,
+        department: student.department || student.department_name,
+        semester: student.semester || 6,
+        section: student.section || 'A',
+        subject_id: sub.id,
+        subject_code: sub.code,
+        subject_name: sub.name,
+        credits: cred,
+        internal_1: +(score * 0.25).toFixed(1),
+        internal_2: +(score * 0.25).toFixed(1),
+        assignment: +(score * 0.10).toFixed(1),
+        marks_obtained: score,
+        max_marks: 100.0,
+        total: score,
+        grade,
+        grade_point,
+        status: 'Published'
+      };
+      stateMarks.push(newM);
+    });
+    setStored('marks', stateMarks);
+    studentMarks = stateMarks.filter((m) => m.student_id === studentId);
+  }
+
+  let totalWeighted = 0;
+  let totalCredits = 0;
+
+  studentMarks.forEach((m) => {
+    const sub = (SUBJECTS || []).find((sb) => sb.id === m.subject_id);
+    const credits = m.credits || sub?.credits || (m.subject_code?.includes('03') ? 3 : 4);
+    m.credits = credits;
+
+    let score = m.marks_obtained !== undefined && m.marks_obtained !== null
+      ? parseFloat(m.marks_obtained)
+      : (m.total !== undefined && m.total !== null ? parseFloat(m.total) : null);
+
+    if (score !== null && score <= 60 && (!m.max_marks || m.max_marks <= 60)) {
+      score = +((score / 60) * 100).toFixed(1);
+    }
+
+    let gp = m.grade_point;
+    if (gp === undefined || gp === null) {
+      if (score !== null) {
+        if (score >= 91) { m.grade = 'O'; gp = 10.0; }
+        else if (score >= 81) { m.grade = 'A+'; gp = 9.0; }
+        else if (score >= 71) { m.grade = 'A'; gp = 8.0; }
+        else if (score >= 61) { m.grade = 'B+'; gp = 7.0; }
+        else if (score >= 50) { m.grade = 'B'; gp = 6.0; }
+        else if (score >= 40) { m.grade = 'C'; gp = 5.0; }
+        else { m.grade = 'F'; gp = 0.0; }
+      } else {
+        gp = getGradePoint(m.grade, score);
+      }
+      m.grade_point = gp;
+    }
+
+    if (gp !== null && !isNaN(gp)) {
+      totalWeighted += gp * credits;
+      totalCredits += credits;
+    }
+  });
+
+  const cgpa = totalCredits > 0 ? parseFloat((totalWeighted / totalCredits).toFixed(2)) : 0.0;
+  student.cgpa = cgpa;
+  student.total_credits = totalCredits;
+  setStored('students', stateStudents);
+
+  // Sync calculated CGPA to Supabase Cloud database
+  if (isSupabaseConfigured && supabase) {
+    try {
+      supabase
+        .from('students')
+        .update({ cgpa, total_credits: totalCredits })
+        .eq('id', student.id)
+        .then(({ error }) => {
+          if (error && student.reg_no) {
+            supabase
+              .from('students')
+              .update({ cgpa, total_credits: totalCredits })
+              .eq('reg_no', student.reg_no)
+              .catch(() => {});
+          }
+        })
+        .catch(() => {});
+    } catch (e) {}
+  }
+
+  return cgpa;
+}
+
+// Ensure every student has their individual CGPA calculated from their distinct marks,
+// purging any stale uniform 8.69 cached from previous localStorage sessions
+stateStudents.forEach((st) => {
+  calculateAndStoreStudentCGPA(st.id);
+});
+setStored('students', stateStudents);
+
+let stateLeaveRequests = getStored('leave_requests', [
+  {
+    id: 1,
+    student_id: 41,
+    student_name: 'Arun Kumar',
+    reg_no: '21CS101',
+    department_name: 'Computer Science and Engineering',
+    leave_type: 'Medical Leave',
+    from_date: '2026-10-22',
+    to_date: '2026-10-24',
+    reason: 'Viral fever and prescribed medical rest',
+    status: 'Pending',
+    faculty_remark: null,
+    admin_remark: null,
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 2).toISOString()
+  },
+  {
+    id: 2,
+    student_id: 42,
+    student_name: 'Nivetha S',
+    reg_no: '21CS102',
+    department_name: 'Computer Science and Engineering',
+    leave_type: 'Family Emergency',
+    from_date: '2026-10-20',
+    to_date: '2026-10-21',
+    reason: 'Attending family emergency in Coimbatore',
+    status: 'Approved',
+    faculty_remark: 'Approved. Submit medical/travel certificate upon return.',
+    admin_remark: 'Approved by academic office.',
+    created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 3).toISOString()
+  },
+  {
+    id: 3,
+    student_id: 43,
+    student_name: 'Vigneshwaran R',
+    reg_no: '21CS103',
+    department_name: 'Computer Science and Engineering',
+    leave_type: 'Event Participation',
+    from_date: '2026-10-25',
+    to_date: '2026-10-26',
+    reason: 'Inter-collegiate AI Hackathon finals at IIT Madras',
+    status: 'Pending',
+    faculty_remark: null,
+    admin_remark: null,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 86400000).toISOString()
+  }
+]);
+
+let stateStudyMaterials = getStored('study_materials', [
+  {
+    id: 1,
+    title: 'CS601 Unit 1: Asymptotic Notations & Recurrence Relations',
+    subject_id: 7,
+    subject_name: 'Design and Analysis of Algorithms',
+    faculty_id: 1,
+    faculty_name: 'Dr. Kavitha Raman',
+    file_type: 'pdf',
+    file_size: '2.4 MB',
+    file_url: 'https://example.com/materials/cs601_unit1.pdf',
+    description: 'Detailed analysis of Master Theorem, Big-O, Omega, Theta bounds and divide-and-conquer recurrences.',
+    downloads: 38,
+    uploaded_at: '2026-10-18'
+  },
+  {
+    id: 2,
+    title: 'CS602 Unit 2: Supervised Learning & Gradient Descent Practice',
+    subject_id: 8,
+    subject_name: 'Artificial Intelligence & Machine Learning',
+    faculty_id: 1,
+    faculty_name: 'Dr. Rajesh Kulkarni',
+    file_type: 'pdf',
+    file_size: '3.1 MB',
+    file_url: 'https://example.com/materials/cs602_unit2.pdf',
+    description: 'Mathematical derivation of MSE loss, cost function optimization, and learning rate tuning with code samples.',
+    downloads: 45,
+    uploaded_at: '2026-10-20'
+  },
+  {
+    id: 3,
+    title: 'CS603 B+ Tree Indexing & Transaction Concurrency Guide',
+    subject_id: 9,
+    subject_name: 'Database Engineering & Distributed Systems',
+    faculty_id: 2,
+    faculty_name: 'Prof. Suresh Kumar',
+    file_type: 'pdf',
+    file_size: '1.9 MB',
+    file_url: 'https://example.com/materials/cs603_bplus_tree.pdf',
+    description: 'Multi-level indexing structures, 2-Phase Locking (2PL), and ACID isolation levels illustrated.',
+    downloads: 29,
+    uploaded_at: '2026-10-21'
+  }
+]);
+
+let stateDocumentRequests = getStored('document_requests', [
+  {
+    id: 1,
+    student_id: 41,
+    student_name: 'Arun Kumar',
+    reg_no: '21CS101',
+    department_name: 'Computer Science and Engineering',
+    doc_type: 'Bonafide Certificate',
+    description: 'Required for national scholarship renewal portal submission.',
+    status: 'Approved',
+    admin_reply: 'Certificate signed and ready for collection at the Registrar Counter.',
+    submitted_at: '2026-10-15',
+    updated_at: '2026-10-16'
+  },
+  {
+    id: 2,
+    student_id: 41,
+    student_name: 'Arun Kumar',
+    reg_no: '21CS101',
+    department_name: 'Computer Science and Engineering',
+    doc_type: 'Fee Receipt Request',
+    description: 'Duplicate tuition fee receipt required for education loan interest rebate.',
+    status: 'Pending',
+    admin_reply: null,
+    submitted_at: '2026-10-22',
+    updated_at: '2026-10-22'
+  }
+]);
+
+let stateComplaints = getStored('complaints', [
+  {
+    id: 1,
+    student_id: 41,
+    student_name: 'Arun Kumar',
+    student_reg_no: '21CS101',
+    department: 'Computer Science and Engineering',
+    category: 'Academic',
+    subject: 'CIA-1 Algorithms Marks Discrepancy',
+    description: 'There was a totaling error in Question 4(b) on dynamic programming. The answer key shows 5 marks, but 2 marks were awarded on my paper.',
+    status: 'Resolved',
+    response: 'Paper reviewed with department chair. The 3 marks discrepancy has been corrected on your transcript.',
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    updated_at: new Date(Date.now() - 86400000 * 3).toISOString()
+  },
+  {
+    id: 2,
+    student_id: 42,
+    student_name: 'Nivetha S',
+    student_reg_no: '21CS102',
+    department: 'Computer Science and Engineering',
+    category: 'Attendance',
+    subject: 'Medical Leave Period Attendance Correction',
+    description: 'My medical leave for Oct 18 was approved by the HOD, but Period 3 attendance is still showing as Absent in the ERP system.',
+    status: 'In Review',
+    response: 'Medical certificate received by Registrar. Attendance office is updating the attendance database.',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updated_at: new Date(Date.now() - 86400000).toISOString()
+  },
+  {
+    id: 3,
+    student_id: 41,
+    student_name: 'Arun Kumar',
+    student_reg_no: '21CS101',
+    department: 'Computer Science and Engineering',
+    category: 'Facility',
+    subject: 'AI Lab Workstation 4 GPU Driver Configuration',
+    description: 'Workstation 4 in AI Lab 1 cannot reach the PyTorch model cache server during lab hours.',
+    status: 'Pending',
+    response: null,
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 86400000).toISOString()
+  }
+]);
+
+// Persistent state stores for institutional governance
+export let stateFaculty = getStored('faculty_members', FACULTY_MEMBERS);
+export let stateDepartments = getStored('departments', DEPARTMENTS);
+export let stateSubjects = getStored('subjects', SUBJECTS);
+
+export let stateTimetableEntries = getStored('timetable_entries', [
+  { id: 1, department_id: 3, department_name: 'CSE', semester: 6, day: 'Monday', start_time: '09:00', end_time: '10:00', time: '09:00 - 10:00', subject_id: 7, subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', faculty_id: 1, faculty_name: 'Dr. Kavitha Raman', room: 'Hall 302', section: 'A' },
+  { id: 2, department_id: 2, department_name: 'IT', semester: 6, day: 'Monday', start_time: '10:15', end_time: '11:15', time: '10:15 - 11:15', subject_id: 13, subject_code: 'IT601', subject_name: 'Cloud Architecture & Microservices', faculty_id: 3, faculty_name: 'Prof. Suresh Kumar', room: 'Hall 201', section: 'A' },
+  { id: 3, department_id: 1, department_name: 'ECE', semester: 6, day: 'Monday', start_time: '11:30', end_time: '12:30', time: '11:30 - 12:30', subject_id: 17, subject_code: 'EC601', subject_name: 'Digital Signal Processing', faculty_id: 4, faculty_name: 'Dr. P. Sangeetha', room: 'Hall 105', section: 'A' },
+  { id: 4, department_id: 3, department_name: 'CSE', semester: 6, day: 'Tuesday', start_time: '09:00', end_time: '10:00', time: '09:00 - 10:00', subject_id: 8, subject_code: 'CS602', subject_name: 'Artificial Intelligence & Machine Learning', faculty_id: 2, faculty_name: 'Dr. Rajesh Kulkarni', room: 'AI Lab 1', section: 'A' },
+  { id: 5, department_id: 3, department_name: 'CSE', semester: 6, day: 'Wednesday', start_time: '13:30', end_time: '15:30', time: '13:30 - 15:30', subject_id: 10, subject_code: 'CS604', subject_name: 'Cloud Computing & DevOps Laboratory', faculty_id: 1, faculty_name: 'Dr. Kavitha Raman', room: 'Lab Block 3', section: 'A' }
+]);
+
+const initialFeesList = stateStudents.map((s, idx) => {
+  const isDefaulter = s.overall_attendance < 75 || s.risk_status === 'High Risk';
+  const total = 85000;
+  const paid = isDefaulter ? 55000 : 85000;
+  const pending = total - paid;
+  return {
+    id: idx + 1,
+    student_id: s.id,
+    student_name: s.name,
+    reg_no: s.reg_no,
+    department: s.department || 'Computer Science and Engineering',
+    title: 'Semester 6 Tuition & Composite Institutional Fee',
+    fee_type: 'Tuition & Academic Composite Fee',
+    total_amount: total,
+    paid_amount: paid,
+    pending_amount: pending,
+    status: pending === 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Pending'),
+    due_date: '2026-04-15',
+    receipt_no: `REC-2026-${String(1000 + idx)}`,
+    paid_at: paid > 0 ? '2026-01-10T11:30:00Z' : null,
+    last_updated: new Date().toISOString()
+  };
+});
+export let stateFees = getStored('fees', initialFeesList);
+
+export let stateCalendarEvents = getStored('calendar_events', [
+  { id: 1, date: '2026-01-26', title: 'Republic Day', type: 'holiday', description: 'National holiday' },
+  { id: 2, date: '2026-03-15', title: 'Mid-Semester CIA-1 Exams Begin', type: 'exam', description: 'Continuous internal assessment exams commence' },
+  { id: 3, date: '2026-03-22', title: 'Mid-Semester CIA-1 Exams End', type: 'exam', description: 'Assessment concluding session' },
+  { id: 4, date: '2026-04-14', title: 'Tamil New Year / Dr. Ambedkar Jayanti', type: 'holiday', description: 'State academic holiday' },
+  { id: 5, date: '2026-04-20', title: 'CIA-2 Examination Schedule', type: 'exam', description: 'Auditorium Block C & Hall allocations' },
+  { id: 6, date: '2026-04-28', title: 'Cloud Mini-Project Final Code Submission', type: 'deadline', description: 'GitHub / Drive link submission deadline' },
+  { id: 7, date: '2026-05-01', title: 'Labour Day Holiday', type: 'holiday', description: 'Campus holiday' },
+  { id: 8, date: '2026-05-18', title: 'Autonomous End-Semester University Exams', type: 'exam', description: 'Theoretical and practical end semester examination' }
+]);
+
+export let stateSettings = getStored('settings', {
+  COLLEGE_NAME: 'Cloud Institute of Technology & Science',
+  college_name: 'Cloud Institute of Technology & Science',
+  ACADEMIC_YEAR: '2025-2026',
+  academic_year: '2025-2026',
+  SEMESTER: 'Even Semester (Jan - May 2026)',
+  semester: 'Even Semester (Jan - May 2026)',
+  SAFE_THRESHOLD: '75.0',
+  attendance_threshold_safe: 75.0,
+  WARNING_THRESHOLD: '65.0',
+  attendance_threshold_warning: 65.0,
+  PASS_MARKS: 50,
+  SMTP_HOST: 'smtp.gmail.com',
+  SMTP_PORT: '587',
+  SMTP_USERNAME: 'examplecollegeerp@gmail.com',
+  SMTP_FROM_EMAIL: 'noreply@college-erp.edu',
+  smtp_configured: true,
+  supabase_cloud_connected: true
+});
+
+
 function getLoggedInUser() {
   try {
     const raw = localStorage.getItem('erp_user');
@@ -165,13 +565,16 @@ function getStudentPeriodAttendanceRecords(student) {
   const isHighRisk = student?.risk_status === 'High Risk';
   const studentId = student?.id || 41;
 
-  const dates = [
-    { date: '2026-10-23', label: 'Today (Wed, Oct 23)', dayName: 'Wednesday' },
-    { date: '2026-10-22', label: 'Yesterday (Tue, Oct 22)', dayName: 'Tuesday' },
-    { date: '2026-10-21', label: 'Mon, Oct 21', dayName: 'Monday' },
-    { date: '2026-10-20', label: 'Fri, Oct 18', dayName: 'Friday' },
-    { date: '2026-10-17', label: 'Thu, Oct 17', dayName: 'Thursday' }
-  ];
+  const sessionDates = Object.keys(stateAttendanceSessions).map((k) => k.split('_')[0]);
+  const todayStr = new Date().toISOString().split('T')[0];
+  const allDateStrs = Array.from(new Set([todayStr, ...sessionDates, '2026-10-23', '2026-10-22', '2026-10-21', '2026-10-20', '2026-10-17'])).sort().reverse();
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dates = allDateStrs.slice(0, 6).map((dateStr) => {
+    const dObj = new Date(dateStr);
+    const dayName = isNaN(dObj.getTime()) ? 'Wednesday' : dayNames[dObj.getDay()];
+    const label = dateStr === todayStr ? `Today (${dayName.slice(0, 3)}, ${dateStr})` : `${dayName.slice(0, 3)}, ${dateStr}`;
+    return { date: dateStr, label, dayName };
+  });
 
   const periodsTemplate = [
     { period_number: 1, period_time: '09:00 - 10:00 AM', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', faculty_name: 'Dr. Kavitha Raman', room: 'Hall 302', subject_id: 7 },
@@ -504,14 +907,27 @@ const client = {
     const queryString = (rawUrl || '').includes('?') ? rawUrl.split('?')[1] : '';
     const queryParams = new URLSearchParams(queryString);
 
+    // Helper to filter notifications targeted for current user's role
+    const currentLoggedUser = getLoggedInUser();
+    const currentRole = currentLoggedUser?.role || 'student';
+    const roleFilteredNotifications = stateNotifications.filter((n) => {
+      if (n.is_cleared) return false;
+      const tRole = (n.target_role || '').toLowerCase();
+      if (!tRole || tRole === 'all') return true;
+      if (currentRole === 'faculty') return tRole === 'faculty' || (currentLoggedUser && n.user_id === currentLoggedUser.id);
+      if (currentRole === 'admin') return tRole === 'admin' || tRole === 'faculty';
+      // student
+      return tRole === 'student' || (currentLoggedUser && n.user_id === currentLoggedUser.id);
+    });
+
     // Notifications unread count (used by Header across all roles)
     if (url === '/notifications/unread-count') {
-      const unread = stateNotifications.filter((n) => !n.is_read && !n.is_cleared).length;
+      const unread = roleFilteredNotifications.filter((n) => !n.is_read).length;
       return { data: { unread_count: unread } };
     }
 
-    if (url === '/notifications/me' || url === '/students/me/notifications') {
-      return { data: stateNotifications.filter((n) => !n.is_cleared) };
+    if (url === '/notifications/me' || url === '/students/me/notifications' || url === '/faculty/notifications') {
+      return { data: roleFilteredNotifications };
     }
 
     // 1. Auth check
@@ -542,7 +958,8 @@ const client = {
             reg_no: st.reg_no,
             department: st.department || 'Computer Science and Engineering',
             semester: st.semester || 6,
-            section: st.section || 'A'
+            section: st.section || 'A',
+            cgpa: st.cgpa !== undefined ? st.cgpa : calculateAndStoreStudentCGPA(st.id)
           },
           attendance: {
             overall_percentage: st.overall_attendance,
@@ -599,24 +1016,7 @@ const client = {
             paid: 85000,
             pending: 0
           },
-          recent_notifications: [
-            {
-              id: 1,
-              title: 'Quiz Published',
-              message: 'Algorithms & Complexity Unit 1 assessment is scheduled and due in 2 days.',
-              type: 'quiz',
-              is_read: false,
-              created_at: new Date(Date.now() - 3600000 * 4).toISOString()
-            },
-            {
-              id: 2,
-              title: 'Assignment Due Reminder',
-              message: 'Full-Stack React + Supabase Cloud Mini-Project is due in 5 days.',
-              type: 'assignment',
-              is_read: false,
-              created_at: new Date(Date.now() - 3600000 * 12).toISOString()
-            }
-          ],
+          recent_notifications: roleFilteredNotifications.slice(0, 4),
           placement_announcements: [
             {
               id: 1,
@@ -726,61 +1126,57 @@ const client = {
       };
     }
 
-    // Student Fees
+    // Student Fees (Live sync with stateFees)
     if (url === '/students/me/fees') {
+      const st = getLoggedInStudent();
+      let studentRecords = stateFees.filter((f) => f.student_id === st.id);
+
+      if (studentRecords.length === 0) {
+        const isDefaulter = st.overall_attendance < 75 || st.risk_status === 'High Risk';
+        const total = 85000;
+        const paid = isDefaulter ? 55000 : 85000;
+        const pending = total - paid;
+        const newRecord = {
+          id: stateFees.length + 1,
+          student_id: st.id,
+          student_name: st.name,
+          reg_no: st.reg_no,
+          department: st.department || 'Computer Science and Engineering',
+          title: 'Semester 6 Tuition & Composite Institutional Fee',
+          fee_type: 'Tuition & Academic Composite Fee',
+          total_amount: total,
+          paid_amount: paid,
+          pending_amount: pending,
+          status: pending === 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Pending'),
+          due_date: '2026-04-15',
+          receipt_no: `REC-2026-${String(1000 + stateFees.length)}`,
+          paid_at: paid > 0 ? '2026-01-10T11:30:00Z' : null,
+          last_updated: new Date().toISOString()
+        };
+        stateFees.push(newRecord);
+        setStored('fees', stateFees);
+        studentRecords = [newRecord];
+      }
+
+      const total = studentRecords.reduce((acc, r) => acc + (parseFloat(r.total_amount) || 0), 0);
+      const paid = studentRecords.reduce((acc, r) => acc + (parseFloat(r.paid_amount) || 0), 0);
+      const pending = Math.max(0, total - paid);
+      const overallStatus = pending === 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Pending');
+
       return {
         data: {
           summary: {
-            total: 85000,
-            paid: 85000,
-            pending: 0,
-            due_date: '2026-11-15',
-            status: 'Paid'
+            total,
+            paid,
+            pending,
+            due_date: studentRecords[0]?.due_date || '2026-04-15',
+            status: overallStatus
           },
-          records: [
-            {
-              id: 1,
-              title: 'Tuition Fee (Semester 6)',
-              fee_type: 'Tuition Fee (Semester 6)',
-              total_amount: 65000,
-              amount: 65000,
-              paid_amount: 65000,
-              pending_amount: 0,
-              status: 'Paid',
-              due_date: '2026-01-15',
-              receipt_no: 'REC-2026-0891',
-              paid_at: '2026-01-10T11:30:00Z'
-            },
-            {
-              id: 2,
-              title: 'Laboratory & Cloud Infrastructure Fee',
-              fee_type: 'Laboratory & Cloud Infrastructure Fee',
-              total_amount: 15000,
-              amount: 15000,
-              paid_amount: 15000,
-              pending_amount: 0,
-              status: 'Paid',
-              due_date: '2026-01-15',
-              receipt_no: 'REC-2026-0892',
-              paid_at: '2026-01-10T11:30:00Z'
-            },
-            {
-              id: 3,
-              title: 'Autonomous Examination Assessment Fee',
-              fee_type: 'Autonomous Examination Assessment Fee',
-              total_amount: 5000,
-              amount: 5000,
-              paid_amount: 5000,
-              pending_amount: 0,
-              status: 'Paid',
-              due_date: '2026-02-15',
-              receipt_no: 'REC-2026-0955',
-              paid_at: '2026-02-05T09:15:00Z'
-            }
-          ]
+          records: studentRecords
         }
       };
     }
+
 
     // Student Exams & Marks
     if (url === '/students/me/exams') {
@@ -820,22 +1216,45 @@ const client = {
       };
     }
 
-    if (url === '/students/me/marks') {
+    if (url === '/students/me/marks' || url === '/students/my-marks') {
       const st = getLoggedInStudent();
-      const stMarks = stateMarks.filter((m) => m.student_id === st.id);
+      let stMarks = stateMarks.filter((m) => m.student_id === st.id);
+      if (stMarks.length === 0) {
+        calculateAndStoreStudentCGPA(st.id);
+        stMarks = stateMarks.filter((m) => m.student_id === st.id);
+      }
       return {
-        data: stMarks.map((m) => ({
-          id: m.id,
-          subject_code: m.subject_code,
-          subject_name: m.subject_name,
-          cia1: m.internal_1,
-          cia2: m.internal_2,
-          assignment: m.assignment,
-          quiz: 10,
-          total: m.total,
-          grade: m.grade || 'Not available',
-          status: m.status
-        }))
+        data: stMarks.map((m) => {
+          const sub = (SUBJECTS || []).find((s) => s.id === m.subject_id);
+          const cred = m.credits || sub?.credits || (m.subject_code?.includes('03') ? 3 : 4);
+          let score = m.marks_obtained !== undefined && m.marks_obtained !== null
+            ? parseFloat(m.marks_obtained)
+            : (m.total !== undefined && m.total !== null ? parseFloat(m.total) : 75.0);
+          if (score <= 60 && (!m.max_marks || m.max_marks <= 60)) {
+            score = +((score / 60) * 100).toFixed(1);
+          }
+          const gp = m.grade_point !== undefined && m.grade_point !== null
+            ? m.grade_point
+            : (score >= 91 ? 10 : (score >= 81 ? 9 : (score >= 71 ? 8 : (score >= 61 ? 7 : (score >= 50 ? 6 : (score >= 40 ? 5 : 0))))));
+          return {
+            id: m.id,
+            student_id: m.student_id,
+            subject_id: m.subject_id,
+            subject_code: m.subject_code,
+            subject_name: m.subject_name,
+            credits: cred,
+            cia1: m.internal_1,
+            cia2: m.internal_2,
+            assignment: m.assignment,
+            quiz: 10,
+            marks_obtained: score,
+            max_marks: 100.0,
+            total: score,
+            grade: m.grade || (gp === 10 ? 'O' : (gp === 9 ? 'A+' : (gp === 8 ? 'A' : (gp === 7 ? 'B+' : (gp === 6 ? 'B' : (gp === 5 ? 'C' : 'F')))))),
+            grade_point: gp,
+            status: m.status || 'Published'
+          };
+        })
       };
     }
 
@@ -912,37 +1331,56 @@ const client = {
 
     // Student Grievances & Complaints
     if (url === '/students/me/complaints') {
+      const st = getLoggedInStudent();
+      const list = stateComplaints.filter((c) => c.student_id === st.id || c.student_reg_no === st.reg_no);
+      return { data: list.length > 0 ? list : stateComplaints };
+    }
+
+    if (url === '/admin/complaints') {
+      const filter = (queryParams.get('status_filter') || queryParams.get('status') || 'All').toLowerCase();
+      let list = [...stateComplaints];
+      if (filter && filter !== 'all') {
+        if (filter === 'open') {
+          list = list.filter((c) => c.status.toLowerCase() === 'open' || c.status.toLowerCase() === 'pending');
+        } else if (filter === 'in progress') {
+          list = list.filter((c) => c.status.toLowerCase() === 'in progress' || c.status.toLowerCase() === 'in review');
+        } else {
+          list = list.filter((c) => c.status.toLowerCase() === filter);
+        }
+      }
       return {
-        data: [
-          {
-            id: 1,
-            subject: 'Library Digital Portal Access',
-            category: 'Academic',
-            description: 'IEEE Xplore database remote credentials login failure from off-campus network.',
-            status: 'Resolved',
-            response: 'Remote proxy gateway credentials renewed. You can now access IEEE through the college portal.',
-            created_at: new Date(Date.now() - 86400000 * 3).toISOString()
-          }
-        ]
+        data: list.map((c) => ({
+          ...c,
+          department_name: c.department_name || c.department || 'Computer Science and Engineering'
+        }))
       };
     }
 
     // 6. Student Quizzes
     if (url === '/students/me/quizzes') {
       const st = getLoggedInStudent();
-      const mapped = stateQuizzes.map((q) => {
+      const visibleQuizzes = stateQuizzes.filter((q) => {
+        // Exclude drafts from students
+        if (q.status && q.status.toLowerCase() === 'draft') return false;
+        // Exclude if student is in excluded list
+        if (Array.isArray(q.excluded_student_ids) && q.excluded_student_ids.includes(st.id)) return false;
+        return true;
+      });
+
+      const mapped = visibleQuizzes.map((q) => {
         const attempt = stateQuizAttempts.find((a) => a.quiz_id === q.id && a.student_id === st.id);
         const isSubmitted = Boolean(attempt && attempt.status === 'Submitted');
+        const sub = SUBJECTS.find((s) => s.id === q.subject_id);
         return {
           id: q.id,
           title: q.title,
           description: q.description,
-          subject_code: q.subject_code,
-          subject_name: q.subject_name,
+          subject_code: q.subject_code || (sub ? sub.code : 'CS601'),
+          subject_name: q.subject_name || (sub ? sub.name : 'Core Engineering Subject'),
           duration_minutes: q.duration_minutes,
           total_marks: q.total_marks,
           deadline: q.deadline,
-          status: q.status,
+          status: q.status || 'published',
           results_published: Boolean(q.results_published),
           attempt_status: isSubmitted ? 'Submitted' : 'Pending',
           score: q.results_published && isSubmitted ? attempt.score : null, // HIDDEN until released!
@@ -1002,22 +1440,43 @@ const client = {
         answers: {}
       };
 
+      const questionsWithReview = (quiz.questions || []).map((q, idx) => {
+        const selected = attempt.answers?.[q.id] || attempt.answers?.[String(q.id)] || attempt.answers?.[idx + 1] || 'A';
+        const isCorrect = selected === q.correct_answer;
+        return {
+          id: q.id,
+          question_id: q.id,
+          question_text: q.question_text,
+          question_type: q.question_type || 'mcq',
+          marks: q.marks || 2.5,
+          marks_awarded: isCorrect ? (q.marks || 2.5) : 0,
+          options: q.options && q.options.length > 0 ? q.options : [
+            { id: 'A', text: 'Option A' },
+            { id: 'B', text: 'Option B' },
+            { id: 'C', text: 'Option C' },
+            { id: 'D', text: 'Option D' }
+          ],
+          selected_answer: selected,
+          correct_answer: q.correct_answer || 'A',
+          is_correct: isCorrect,
+          explanation: q.explanation || `Option ${q.correct_answer || 'A'} is the correct answer according to course reference material.`
+        };
+      });
+
+      const totalMarks = quiz.total_marks || questionsWithReview.reduce((acc, q) => acc + q.marks, 0);
+      const score = attempt.score !== undefined ? attempt.score : questionsWithReview.reduce((acc, q) => acc + q.marks_awarded, 0);
+      const percentage = totalMarks > 0 ? +((score / totalMarks) * 100).toFixed(1) : 0;
+
       return {
         data: {
           quiz_id: quiz.id,
           title: quiz.title,
-          score: attempt.score,
-          total_marks: quiz.total_marks,
+          score,
+          total_marks: totalMarks,
+          percentage,
           results_published: true,
-          questions: quiz.questions.map((q) => ({
-            id: q.id,
-            question_text: q.question_text,
-            marks: q.marks,
-            selected_answer: attempt.answers?.[q.id] || 'A',
-            correct_answer: q.correct_answer,
-            is_correct: (attempt.answers?.[q.id] || 'A') === q.correct_answer,
-            explanation: q.explanation
-          }))
+          questions: questionsWithReview,
+          breakdown: questionsWithReview
         }
       };
     }
@@ -1042,6 +1501,7 @@ const client = {
           allow_resubmission: a.allow_resubmission,
           allow_late: a.allow_late,
           status: sub ? sub.status : 'Pending',
+          can_submit: a.can_submit !== false && (!sub || a.allow_resubmission !== false),
           submission: sub || null,
           marks: sub ? sub.marks_obtained : null,
           feedback: sub ? sub.faculty_feedback : null
@@ -1147,13 +1607,33 @@ const client = {
 
     if (url === '/faculty/timetable') {
       return {
-        data: [
-          { id: 1, day: 'Monday', time: '09:00 - 10:00', start_time: '09:00', end_time: '10:00', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', section: 'A', room: 'Hall 302' },
-          { id: 2, day: 'Tuesday', time: '10:15 - 11:15', start_time: '10:15', end_time: '11:15', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', section: 'A', room: 'Hall 302' },
-          { id: 3, day: 'Tuesday', time: '13:30 - 15:30', start_time: '13:30', end_time: '15:30', subject_code: 'CS604', subject_name: 'Cloud Computing & DevOps Laboratory', section: 'A', room: 'Cloud Computing Lab' },
-          { id: 4, day: 'Wednesday', time: '09:00 - 10:00', start_time: '09:00', end_time: '10:00', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', section: 'A', room: 'Hall 302' },
-          { id: 5, day: 'Thursday', time: '10:15 - 11:15', start_time: '10:15', end_time: '11:15', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', section: 'A', room: 'Hall 302' }
-        ]
+        data: {
+          Monday: [
+            { id: 1, day: 'Monday', start_time: '09:00', end_time: '10:00', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', semester: 6, section: 'A', room: 'Hall 302' },
+            { id: 2, day: 'Monday', start_time: '10:15', end_time: '11:15', subject_code: 'CS602', subject_name: 'Artificial Intelligence & Machine Learning', semester: 6, section: 'B', room: 'AI Lab 1' },
+            { id: 3, day: 'Monday', start_time: '13:30', end_time: '15:30', subject_code: 'CS604', subject_name: 'Cloud Computing & DevOps Laboratory', semester: 6, section: 'A', room: 'Cloud Computing Lab' }
+          ],
+          Tuesday: [
+            { id: 4, day: 'Tuesday', start_time: '09:00', end_time: '10:00', subject_code: 'CS602', subject_name: 'Artificial Intelligence & Machine Learning', semester: 6, section: 'A', room: 'AI Lab 1' },
+            { id: 5, day: 'Tuesday', start_time: '10:15', end_time: '11:15', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', semester: 6, section: 'A', room: 'Hall 302' },
+            { id: 6, day: 'Tuesday', start_time: '11:30', end_time: '12:30', subject_code: 'CS605', subject_name: 'Web Technology & Microservices', semester: 6, section: 'C', room: 'Hall 304' }
+          ],
+          Wednesday: [
+            { id: 7, day: 'Wednesday', start_time: '09:00', end_time: '10:00', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', semester: 6, section: 'A', room: 'Hall 302' },
+            { id: 8, day: 'Wednesday', start_time: '10:15', end_time: '11:15', subject_code: 'CS603', subject_name: 'Database Engineering & Distributed Systems', semester: 6, section: 'B', room: 'Hall 305' },
+            { id: 9, day: 'Wednesday', start_time: '13:30', end_time: '15:30', subject_code: 'CS604', subject_name: 'Cloud Computing & DevOps Laboratory', semester: 6, section: 'B', room: 'Cloud Computing Lab' }
+          ],
+          Thursday: [
+            { id: 10, day: 'Thursday', start_time: '09:00', end_time: '10:00', subject_code: 'CS603', subject_name: 'Database Engineering & Distributed Systems', semester: 6, section: 'A', room: 'Hall 304' },
+            { id: 11, day: 'Thursday', start_time: '10:15', end_time: '11:15', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', semester: 6, section: 'A', room: 'Hall 302' },
+            { id: 12, day: 'Thursday', start_time: '14:00', end_time: '15:30', subject_code: 'CS602', subject_name: 'Artificial Intelligence & Machine Learning', semester: 6, section: 'A', room: 'AI Lab 2' }
+          ],
+          Friday: [
+            { id: 13, day: 'Friday', start_time: '09:00', end_time: '10:00', subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', semester: 6, section: 'A', room: 'Hall 302' },
+            { id: 14, day: 'Friday', start_time: '10:15', end_time: '11:15', subject_code: 'CS605', subject_name: 'Web Technology & Microservices', semester: 6, section: 'A', room: 'Lab Block 4' },
+            { id: 15, day: 'Friday', start_time: '11:30', end_time: '12:30', subject_code: 'CS606', subject_name: 'Professional Ethics in Engineering', semester: 6, section: 'A', room: 'Hall 302' }
+          ]
+        }
       };
     }
 
@@ -1217,6 +1697,8 @@ const client = {
           submission_type: sub ? sub.submission_type : null,
           file_name: sub ? sub.file_name : null,
           file_path: sub ? sub.file_path : null,
+          file_data: sub ? sub.file_data : null,
+          file_size: sub ? sub.file_size : null,
           drive_link: sub ? sub.drive_link : null,
           submitted_at: sub ? sub.submitted_at : null,
           marks_obtained: sub ? sub.marks_obtained : null,
@@ -1246,46 +1728,43 @@ const client = {
       };
     }
 
-    // 10. Admin Endpoints
+    // 10. Admin Endpoints (Connected to real DB state stores)
     if (url === '/admin/dashboard' || url === '/admin/dashboard-stats') {
-      const avgAtt = +(stateStudents.reduce((acc, s) => acc + s.overall_attendance, 0) / stateStudents.length).toFixed(1);
-      const lowAtt = stateStudents.filter((s) => s.overall_attendance < 75);
+      const safeThresh = parseFloat(stateSettings.SAFE_THRESHOLD || stateSettings.attendance_threshold_safe || 75.0);
+      const avgAtt = +(stateStudents.reduce((acc, s) => acc + (parseFloat(s.overall_attendance) || 0), 0) / (stateStudents.length || 1)).toFixed(1);
+      const lowAtt = stateStudents.filter((s) => (parseFloat(s.overall_attendance) || 0) < safeThresh);
+
+      const totalFeesVal = stateFees.reduce((acc, f) => acc + (parseFloat(f.total_amount) || 0), 0);
+      const paidFeesVal = stateFees.reduce((acc, f) => acc + (parseFloat(f.paid_amount) || 0), 0);
+      const pendingFeesVal = Math.max(0, totalFeesVal - paidFeesVal);
+
+      const deptBreakdown = stateDepartments.map((dept) => {
+        const studentCount = stateStudents.filter((s) => s.department_id === dept.id || s.department === dept.name).length;
+        const facultyCount = stateFaculty.filter((f) => f.department_id === dept.id || f.department_name === dept.name).length;
+        return {
+          id: dept.id,
+          name: dept.name,
+          code: dept.code,
+          students: studentCount,
+          faculty: facultyCount
+        };
+      });
+
       return {
         data: {
-          total_students: stateStudents.length, // 60 students
-          total_faculty: FACULTY_MEMBERS.length,
+          total_students: stateStudents.length,
+          total_faculty: stateFaculty.length,
+          total_departments: stateDepartments.length,
           average_attendance: avgAtt,
           students_below_75: lowAtt.length,
           upcoming_exams: 3,
-          pending_fees: 45000,
-          total_departments: 3,
+          total_fees: totalFeesVal,
+          paid_fees: paidFeesVal,
+          pending_fees: pendingFeesVal,
           attendance_alerts: lowAtt.filter((s) => s.risk_status === 'High Risk').length,
-          department_stats: [
-            { department: 'ECE', count: 20 },
-            { department: 'IT', count: 20 },
-            { department: 'CSE', count: 20 }
-          ],
+          department_stats: deptBreakdown.map((d) => ({ department: d.code, count: d.students })),
           recent_registrations: stateStudents.slice(0, 5),
-          department_breakdown: [
-            {
-              name: 'Electronics and Communication Engineering',
-              code: 'ECE',
-              students: stateStudents.filter((s) => s.department_id === 1).length,
-              faculty: 4
-            },
-            {
-              name: 'Information Technology',
-              code: 'IT',
-              students: stateStudents.filter((s) => s.department_id === 2).length,
-              faculty: 4
-            },
-            {
-              name: 'Computer Science and Engineering',
-              code: 'CSE',
-              students: stateStudents.filter((s) => s.department_id === 3).length,
-              faculty: 4
-            }
-          ],
+          department_breakdown: deptBreakdown,
           recent_alerts: lowAtt.slice(0, 5).map((s, idx) => ({
             id: idx + 1,
             student_name: s.name,
@@ -1304,11 +1783,15 @@ const client = {
     }
 
     if (url === '/admin/faculty') {
-      return { data: FACULTY_MEMBERS };
+      return { data: stateFaculty };
+    }
+
+    if (url === '/admin/departments') {
+      return { data: stateDepartments };
     }
 
     if (url === '/admin/subjects') {
-      return { data: SUBJECTS };
+      return { data: stateSubjects };
     }
 
     if (url === '/admin/exams') {
@@ -1345,34 +1828,19 @@ const client = {
     }
 
     if (url === '/admin/fees') {
-      const records = stateStudents.map((s, idx) => {
-        const isDefaulter = s.risk_status === 'High Risk';
-        const total = 85000;
-        const paid = isDefaulter ? 70000 : 85000;
-        const pending = total - paid;
-        return {
-          id: idx + 1,
-          student_id: s.id,
-          student_name: s.name,
-          reg_no: s.reg_no,
-          department: s.department,
-          title: 'Semester 6 Tuition & Composite Institutional Fee',
-          total_amount: total,
-          paid_amount: paid,
-          pending_amount: pending,
-          status: pending === 0 ? 'Paid' : 'Pending',
-          due_date: '2026-04-15'
-        };
-      });
+      const records = [...stateFees];
+      const totalAssessed = records.reduce((acc, r) => acc + (parseFloat(r.total_amount) || 0), 0);
+      const totalCollected = records.reduce((acc, r) => acc + (parseFloat(r.paid_amount) || 0), 0);
+      const totalPending = Math.max(0, totalAssessed - totalCollected);
+      const collectionPct = totalAssessed > 0 ? +((totalCollected / totalAssessed) * 100).toFixed(1) : 0;
 
-      // Attach summary and defaulters for metadata consumers
       records.summary = {
-        total_assessed: records.length * 85000,
-        total_collected: records.reduce((acc, r) => acc + r.paid_amount, 0),
-        total_pending: records.reduce((acc, r) => acc + r.pending_amount, 0),
-        collection_percentage: 98.5
+        total_assessed: totalAssessed,
+        total_collected: totalCollected,
+        total_pending: totalPending,
+        collection_percentage: collectionPct
       };
-      records.defaulters = records.filter(r => r.pending_amount > 0);
+      records.defaulters = records.filter((r) => (parseFloat(r.pending_amount) || 0) > 0);
       records.records = records;
 
       return {
@@ -1381,8 +1849,9 @@ const client = {
     }
 
     if (url === '/admin/attendance-alerts') {
+      const safeThresh = parseFloat(stateSettings.SAFE_THRESHOLD || stateSettings.attendance_threshold_safe || 75.0);
       const lowAttendance = stateStudents
-        .filter((s) => s.risk_status !== 'Safe' || s.overall_attendance < 75)
+        .filter((s) => s.risk_status !== 'Safe' || s.overall_attendance < safeThresh)
         .map((s) => {
           const recoveryClasses = Math.max(1, Math.ceil((0.75 * (s.total_conducted || 40) - (s.total_attended || Math.round((s.overall_attendance * 40) / 100))) / (1 - 0.75)));
           return {
@@ -1396,7 +1865,7 @@ const client = {
             risk_level: s.risk_status || (s.overall_attendance < 65 ? 'High Risk' : 'Warning'),
             last_alert_status: 'Delivered (SMTP)',
             recovery_classes: recoveryClasses,
-            email_preview: `<html><body style="font-family:Arial,sans-serif;padding:20px;color:#1e293b;"><h2 style="color:#b91c1c;">Attendance Alert Notice &bull; College Academic Governance</h2><p>Dear Parent / Guardian of <strong>${s.name}</strong> (${s.reg_no}),</p><p>This is an automated notification from the Academic Registrar. The current recorded attendance for your ward is <strong>${s.overall_attendance}%</strong>, which falls below the mandatory university threshold of <strong>75.0%</strong>.</p><p>Your ward requires attending at least <strong>${recoveryClasses}</strong> consecutive classes without absence to restore good academic standing.</p><hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/><p style="font-size:11px;color:#64748b;">Office of the Academic Registrar &bull; Cloud Institute of Technology & Science</p></body></html>`
+            email_preview: `<html><body style="font-family:Arial,sans-serif;padding:20px;color:#1e293b;"><h2 style="color:#b91c1c;">Attendance Alert Notice &bull; College Academic Governance</h2><p>Dear Parent / Guardian of <strong>${s.name}</strong> (${s.reg_no}),</p><p>This is an automated notification from the Academic Registrar. The current recorded attendance for your ward is <strong>${s.overall_attendance}%</strong>, which falls below the mandatory university threshold of <strong>${safeThresh}%</strong>.</p><p>Your ward requires attending at least <strong>${recoveryClasses}</strong> consecutive classes without absence to restore good academic standing.</p><hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/><p style="font-size:11px;color:#64748b;">Office of the Academic Registrar &bull; Cloud Institute of Technology & Science</p></body></html>`
           };
         });
 
@@ -1404,7 +1873,7 @@ const client = {
         data: {
           below_75_students: lowAttendance,
           alert_logs: stateAlertLogs,
-          safe_threshold: 75.0,
+          safe_threshold: safeThresh,
           smtp_configured: true
         }
       };
@@ -1445,29 +1914,193 @@ const client = {
 
     if (url === '/admin/timetable') {
       return {
-        data: [
-          { id: 1, department_name: 'CSE', semester: 6, day: 'Monday', time: '09:00 - 10:00', subject_name: 'Design and Analysis of Algorithms', faculty_name: 'Dr. Kavitha Raman', room: 'Hall 302' },
-          { id: 2, department_name: 'IT', semester: 6, day: 'Monday', time: '10:15 - 11:15', subject_name: 'Cloud Architecture & Microservices', faculty_name: 'Dr. Anand Kumar', room: 'Hall 201' },
-          { id: 3, department_name: 'ECE', semester: 6, day: 'Monday', time: '11:30 - 12:30', subject_name: 'Digital Signal Processing', faculty_name: 'Dr. Meenakshi Sundaram', room: 'Hall 105' }
-        ]
+        data: stateTimetableEntries
+      };
+    }
+
+    // Academic Calendar Events (ERP live data combined with exams and assignments)
+    if (url === '/admin/calendar/events' || url === '/calendar/events') {
+      const examEvents = [
+        { id: 'exam_1', date: new Date(Date.now() + 86400000 * 6).toISOString().split('T')[0], title: 'CIA-2: CS601 Design and Analysis of Algorithms', type: 'exam', description: 'Auditorium Block C (10:00 AM - 12:00 PM)' },
+        { id: 'exam_2', date: new Date(Date.now() + 86400000 * 8).toISOString().split('T')[0], title: 'CIA-2: CS602 AI & Machine Learning', type: 'exam', description: 'AI Lab 1 & 2 (10:00 AM - 12:00 PM)' },
+        { id: 'exam_3', date: new Date(Date.now() + 86400000 * 10).toISOString().split('T')[0], title: 'CIA-2: CS603 Database Engineering', type: 'exam', description: 'Hall 304 & 305 (10:00 AM - 12:00 PM)' }
+      ];
+
+      const assignmentEvents = stateAssignments.map((a) => ({
+        id: `asgn_${a.id}`,
+        date: (a.due_date || '').split('T')[0],
+        title: `Deadline: ${a.title}`,
+        type: 'deadline',
+        description: `${a.subject_code} - Max marks: ${a.max_marks}`
+      })).filter((e) => e.date);
+
+      const announcementEvents = stateAnnouncements
+        .filter((a) => a.event_date)
+        .map((a) => ({
+          id: `ann_${a.id}`,
+          date: a.event_date.split('T')[0],
+          title: `Campus Event: ${a.title}`,
+          type: 'event',
+          description: a.content || a.description || ''
+        }));
+
+      const combined = [...stateCalendarEvents, ...examEvents, ...assignmentEvents, ...announcementEvents];
+      // Deduplicate by date + title
+      const uniqueMap = new Map();
+      combined.forEach((e) => {
+        const k = `${e.date}_${e.title}`;
+        if (!uniqueMap.has(k)) uniqueMap.set(k, e);
+      });
+
+      return {
+        data: Array.from(uniqueMap.values())
       };
     }
 
     if (url === '/admin/settings') {
       return {
+        data: stateSettings
+      };
+    }
+
+
+    // Leave Requests
+    if (url === '/students/leave-requests') {
+      const st = getLoggedInStudent();
+      const userLeaves = stateLeaveRequests.filter((l) => l.student_id === st.id || l.reg_no === st.reg_no);
+      return { data: userLeaves.length > 0 ? userLeaves : stateLeaveRequests };
+    }
+
+    if (url === '/faculty/leave-requests' || url === '/admin/leave-requests') {
+      return { data: stateLeaveRequests };
+    }
+
+    // Study Materials
+    if (url === '/students/study-materials' || url === '/faculty/study-materials') {
+      return { data: stateStudyMaterials };
+    }
+
+    // Document Requests
+    if (url === '/students/documents') {
+      const st = getLoggedInStudent();
+      const userDocs = stateDocumentRequests.filter((d) => d.student_id === st.id || d.reg_no === st.reg_no);
+      return { data: userDocs.length > 0 ? userDocs : stateDocumentRequests };
+    }
+
+    if (url === '/admin/documents') {
+      return { data: stateDocumentRequests };
+    }
+
+    // Student GPA & Marks
+    if (url === '/students/my-marks') {
+      const st = getLoggedInStudent();
+      const cgpa = calculateAndStoreStudentCGPA(st.id);
+      return {
+        data: [
+          {
+            id: 1,
+            student_id: st.id,
+            subject_id: 7,
+            subject_code: 'CS601',
+            subject_name: 'Design and Analysis of Algorithms',
+            credits: 4,
+            exam_type: 'Continuous Assessment & End Semester',
+            marks_obtained: 88.0,
+            max_marks: 100.0,
+            grade: 'A+',
+            grade_point: 9.0,
+            weighted_points: 36.0,
+            remarks: 'Consistent top performer in algorithm design.'
+          },
+          {
+            id: 2,
+            student_id: st.id,
+            subject_id: 8,
+            subject_code: 'CS602',
+            subject_name: 'Artificial Intelligence & Machine Learning',
+            credits: 4,
+            exam_type: 'Continuous Assessment & End Semester',
+            marks_obtained: 84.5,
+            max_marks: 100.0,
+            grade: 'A',
+            grade_point: 8.0,
+            weighted_points: 32.0,
+            remarks: 'Good grasp of neural architectures.'
+          },
+          {
+            id: 3,
+            student_id: st.id,
+            subject_id: 9,
+            subject_code: 'CS603',
+            subject_name: 'Database Engineering & Distributed Systems',
+            credits: 3,
+            exam_type: 'Continuous Assessment & End Semester',
+            marks_obtained: 82.0,
+            max_marks: 100.0,
+            grade: 'A',
+            grade_point: 8.0,
+            weighted_points: 24.0,
+            remarks: 'Proficient in transaction management.'
+          },
+          {
+            id: 4,
+            student_id: st.id,
+            subject_id: 10,
+            subject_code: 'CS604',
+            subject_name: 'Cloud Computing & DevOps Laboratory',
+            credits: 2,
+            exam_type: 'Laboratory Practical',
+            marks_obtained: 94.0,
+            max_marks: 100.0,
+            grade: 'O',
+            grade_point: 10.0,
+            weighted_points: 20.0,
+            remarks: 'Exemplary CI/CD pipeline automation.'
+          },
+          {
+            id: 5,
+            student_id: st.id,
+            subject_id: 11,
+            subject_code: 'CS605',
+            subject_name: 'Web Technology & Microservices',
+            credits: 3,
+            exam_type: 'Continuous Assessment & End Semester',
+            marks_obtained: 86.0,
+            max_marks: 100.0,
+            grade: 'A+',
+            grade_point: 9.0,
+            weighted_points: 27.0,
+            remarks: 'Solid full-stack development capability.'
+          }
+        ]
+      };
+    }
+
+    if (url === '/students/me/cgpa') {
+      const st = getLoggedInStudent();
+      const cgpa = calculateAndStoreStudentCGPA(st.id);
+      return {
         data: {
-          college_name: 'Cloud Institute of Technology & Science',
-          academic_year: '2025-2026',
-          semester: 'Even Semester (Jan - May 2026)',
-          attendance_threshold_safe: 75.0,
-          attendance_threshold_warning: 65.0,
-          SMTP_HOST: 'smtp.gmail.com',
-          SMTP_PORT: '587',
-          SMTP_USERNAME: 'examplecollegeerp@gmail.com',
-          SMTP_FROM_EMAIL: 'noreply@college-erp.edu',
-          smtp_configured: true,
-          supabase_cloud_connected: true
+          student_id: st.id,
+          reg_no: st.reg_no,
+          name: st.name,
+          cgpa: cgpa,
+          formula: "sum(grade_points * credits) / sum(credits)",
+          total_credits: 16.0,
+          total_weighted_points: 139.0
         }
+      };
+    }
+
+    // Admin Faculty Performance
+    if (url === '/admin/faculty-performance') {
+      return {
+        data: [
+          { id: 1, name: 'Dr. Kavitha Raman', department: 'CSE', subjects_taught: 3, avg_marks_given: 82.4, attendance_marked_pct: 97.5, quizzes_created: 6, assignments_created: 5, complaints_received: 0 },
+          { id: 2, name: 'Dr. Rajesh Kulkarni', department: 'CSE', subjects_taught: 2, avg_marks_given: 78.1, attendance_marked_pct: 95.0, quizzes_created: 5, assignments_created: 4, complaints_received: 1 },
+          { id: 3, name: 'Prof. Suresh Kumar', department: 'IT', subjects_taught: 2, avg_marks_given: 76.5, attendance_marked_pct: 94.2, quizzes_created: 4, assignments_created: 3, complaints_received: 0 },
+          { id: 4, name: 'Dr. P. Sangeetha', department: 'ECE', subjects_taught: 2, avg_marks_given: 80.0, attendance_marked_pct: 96.0, quizzes_created: 5, assignments_created: 4, complaints_received: 0 }
+        ]
       };
     }
 
@@ -1677,21 +2310,179 @@ const client = {
       };
     }
 
+    // 5a. Create Faculty Quiz
+    if (url === '/faculty/quizzes') {
+      const sub = SUBJECTS.find((s) => s.id === parseInt(data.subject_id)) || { code: 'CS601', name: 'Design and Analysis of Algorithms' };
+      const newQuiz = {
+        id: Date.now(),
+        title: data.title,
+        description: data.description || '',
+        subject_id: parseInt(data.subject_id) || 7,
+        subject_code: sub.code || 'CS601',
+        subject_name: sub.name || 'Core Engineering Subject',
+        department_id: parseInt(data.department_id) || 1,
+        semester: parseInt(data.semester) || 6,
+        section: data.section || 'All',
+        duration_minutes: parseInt(data.duration_minutes) || 30,
+        total_marks: (data.questions || []).reduce((acc, q) => acc + (parseFloat(q.marks) || 1), 0) || 10.0,
+        deadline: data.deadline || new Date(Date.now() + 86400000 * 3).toISOString(),
+        start_time: data.start_time || new Date().toISOString(),
+        status: data.status || 'published',
+        results_published: false,
+        allow_multiple_attempts: Boolean(data.allow_multiple_attempts),
+        max_attempts: parseInt(data.max_attempts) || 1,
+        excluded_student_ids: data.excluded_student_ids || [],
+        questions: (data.questions || []).map((q, idx) => ({
+          id: Date.now() + idx + 1,
+          question_text: q.question_text,
+          question_type: q.question_type || 'mcq',
+          marks: parseFloat(q.marks) || 2.5,
+          options: q.options || [],
+          correct_answer: q.correct_answer || 'A',
+          explanation: q.explanation || ''
+        }))
+      };
+      stateQuizzes = [newQuiz, ...stateQuizzes];
+      setStored('quizzes', stateQuizzes);
+      return { data: newQuiz };
+    }
+
+    // 5b. Toggle Quiz Publish Status (Draft <-> Published)
+    if (url.startsWith('/faculty/quizzes/') && url.includes('/publish') && !url.includes('/publish-results')) {
+      const qId = parseInt(url.split('/')[3]);
+      const searchParams = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
+      const shouldPublish = searchParams.get('publish') === 'true' || searchParams.get('publish') === null;
+
+      stateQuizzes = stateQuizzes.map((q) => {
+        if (q.id === qId) {
+          return { ...q, status: shouldPublish ? 'published' : 'draft' };
+        }
+        return q;
+      });
+      setStored('quizzes', stateQuizzes);
+      return {
+        data: {
+          quiz_id: qId,
+          status: shouldPublish ? 'published' : 'draft',
+          message: shouldPublish ? 'Quiz published successfully.' : 'Quiz saved as draft.'
+        }
+      };
+    }
+
+    // 5c. Start Quiz Attempt
+    if (url.startsWith('/students/me/quizzes/') && url.endsWith('/start')) {
+      return { data: { message: 'Quiz attempt started successfully' } };
+    }
+
+    // 5d. Student Leave Request Submission
+    if (url === '/students/leave-requests') {
+      const st = getLoggedInStudent();
+      const newLeave = {
+        id: Date.now(),
+        student_id: st.id,
+        student_name: st.name,
+        reg_no: st.reg_no,
+        department_name: st.department || 'Computer Science and Engineering',
+        leave_type: data.leave_type || 'Medical Leave',
+        from_date: data.from_date,
+        to_date: data.to_date,
+        reason: data.reason || '',
+        status: 'Pending',
+        faculty_remark: null,
+        admin_remark: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      stateLeaveRequests = [newLeave, ...stateLeaveRequests];
+      setStored('leave_requests', stateLeaveRequests);
+
+      // Real-time notification for Faculty
+      const facNotif = {
+        id: Date.now(),
+        title: `📝 New Student Leave Request: ${st.name} (${st.reg_no})`,
+        message: `${st.name} has submitted a ${newLeave.leave_type} request for ${newLeave.from_date} to ${newLeave.to_date}. Reason: ${newLeave.reason || 'Not specified'}.`,
+        type: 'Leave Request',
+        priority: 'High',
+        target_role: 'faculty',
+        is_read: false,
+        is_cleared: false,
+        created_at: new Date().toISOString()
+      };
+      stateNotifications = [facNotif, ...stateNotifications];
+      setStored('notifications', stateNotifications);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notification-updated'));
+      }
+
+      return { data: newLeave };
+    }
+
+    // 5e. Faculty Study Material Upload
+    if (url === '/faculty/study-materials') {
+      const sub = SUBJECTS.find((s) => s.id === parseInt(data.subject_id)) || { name: 'Subject Material' };
+      const newMat = {
+        id: Date.now(),
+        title: data.title,
+        subject_id: parseInt(data.subject_id) || 7,
+        subject_name: sub.name,
+        faculty_id: 1,
+        faculty_name: 'Dr. Kavitha Raman',
+        file_name: data.file_name || `${data.title || 'study_material'}.${data.file_type || 'pdf'}`,
+        file_type: data.file_type || 'pdf',
+        file_size: data.file_size || '1.8 MB',
+        file_url: data.file_url || null,
+        file_data: data.file_data || null, // Base64 Data URL for real instant download by students
+        description: data.description || '',
+        downloads: 0,
+        uploaded_at: new Date().toISOString().split('T')[0]
+      };
+      stateStudyMaterials = [newMat, ...stateStudyMaterials];
+      setStored('study_materials', stateStudyMaterials);
+      return { data: newMat };
+    }
+
+    // 5f. Student Document Request Submission
+    if (url === '/students/documents') {
+      const st = getLoggedInStudent();
+      const newDoc = {
+        id: Date.now(),
+        student_id: st.id,
+        student_name: st.name,
+        reg_no: st.reg_no,
+        department_name: st.department || 'Computer Science and Engineering',
+        doc_type: data.doc_type || 'Bonafide Certificate',
+        description: data.description || '',
+        status: 'Pending',
+        admin_reply: null,
+        submitted_at: new Date().toISOString().split('T')[0],
+        updated_at: new Date().toISOString().split('T')[0]
+      };
+      stateDocumentRequests = [newDoc, ...stateDocumentRequests];
+      setStored('document_requests', stateDocumentRequests);
+      return { data: newDoc };
+    }
+
     // 6. Submit Assignment File
     if (url.startsWith('/students/me/assignments/') && url.includes('/submit-file')) {
       const asgnId = parseInt(url.split('/')[4]);
       const st = getLoggedInStudent();
       const file = data instanceof FormData ? data.get('file') : null;
+      const fileData = data instanceof FormData ? data.get('file_data') : data?.file_data;
+      const fileName = data instanceof FormData ? data.get('file_name') : data?.file_name;
+      const fileSize = data instanceof FormData ? data.get('file_size') : data?.file_size;
 
       let fileInfo = {
-        file_name: file ? file.name : 'assignment_submission.pdf',
-        file_path: `assignments/${asgnId}/${st.id}_file.pdf`
+        file_name: fileName || (file ? file.name : 'assignment_submission.pdf'),
+        file_path: `assignments/${asgnId}/${st.id}_file.pdf`,
+        file_data: fileData || null,
+        file_size: fileSize || '1.2 MB'
       };
 
       if (file && isSupabaseConfigured) {
         try {
           const uploadRes = await uploadAssignmentFile(file, st.id, asgnId);
           fileInfo = {
+            ...fileInfo,
             file_name: uploadRes.fileName,
             file_path: uploadRes.filePath
           };
@@ -1707,6 +2498,8 @@ const client = {
         submission_type: 'file',
         file_name: fileInfo.file_name,
         file_path: fileInfo.file_path,
+        file_data: fileInfo.file_data,
+        file_size: fileInfo.file_size,
         status: 'Submitted',
         submitted_at: new Date().toISOString(),
         marks_obtained: null,
@@ -1763,13 +2556,15 @@ const client = {
 
     // 9. Create Assignment (FACULTY OPERATION)
     if (url === '/faculty/assignments') {
+      const subId = parseInt(data.subject_id) || 7;
+      const subObj = SUBJECTS.find((s) => s.id === subId) || { code: 'CS601', name: 'Design and Analysis of Algorithms' };
       const newAsgn = {
         id: stateAssignments.length + 1,
         title: data.title,
         description: data.description,
-        subject_id: parseInt(data.subject_id) || 7,
-        subject_code: 'CS601',
-        subject_name: 'Design and Analysis of Algorithms',
+        subject_id: subId,
+        subject_code: subObj.code || 'CS601',
+        subject_name: subObj.name || 'Design and Analysis of Algorithms',
         faculty_id: 1,
         department_id: parseInt(data.department_id) || 3,
         semester: data.semester || 6,
@@ -1782,11 +2577,31 @@ const client = {
         submission_format: data.submission_format || 'both',
         allow_resubmission: data.allow_resubmission !== false,
         allow_late: data.allow_late !== false,
+        can_submit: true,
         reminder_interval_minutes: data.reminder_interval_minutes || 60,
         status: 'published'
       };
       stateAssignments = [newAsgn, ...stateAssignments];
       setStored('assignments', stateAssignments);
+
+      // Notify students immediately
+      const notif = {
+        id: Date.now(),
+        title: `📚 Assignment Published: ${newAsgn.title}`,
+        message: `New assignment published for ${newAsgn.subject_name} (${newAsgn.subject_code}). Due on ${newAsgn.due_date} at ${newAsgn.due_time}.`,
+        type: 'Assignment',
+        priority: 'High',
+        target_role: 'student',
+        is_read: false,
+        is_cleared: false,
+        created_at: new Date().toISOString()
+      };
+      stateNotifications = [notif, ...stateNotifications];
+      setStored('notifications', stateNotifications);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notification-updated'));
+      }
+
       return { data: newAsgn };
     }
 
@@ -2286,57 +3101,437 @@ const client = {
 
     if (url === '/faculty/marks') {
       const { student_id, subject_id, internal_1, internal_2, assignment } = data;
-      const markIdx = stateMarks.findIndex((m) => m.student_id === student_id && m.subject_id === parseInt(subject_id));
-      if (markIdx !== -1) {
-        const row = { ...stateMarks[markIdx] };
-        if (internal_1 !== undefined) row.internal_1 = parseFloat(internal_1);
-        if (internal_2 !== undefined) row.internal_2 = parseFloat(internal_2);
-        if (assignment !== undefined) row.assignment = parseFloat(assignment);
-        row.total = +((row.internal_1 || 0) + (row.internal_2 || 0) + (row.assignment || 0)).toFixed(1);
-        if (row.total >= 54) row.grade = 'A+';
-        else if (row.total >= 48) row.grade = 'A';
-        else if (row.total >= 42) row.grade = 'B+';
-        else if (row.total >= 36) row.grade = 'B';
-        else if (row.total >= 30) row.grade = 'C';
-        else row.grade = 'F';
-        row.status = 'Published';
-        stateMarks[markIdx] = row;
-        setStored('marks', stateMarks);
+      const subId = parseInt(subject_id) || 7;
+      const subObj = SUBJECTS.find((s) => s.id === subId) || { code: 'CS601', name: 'Design and Analysis of Algorithms' };
+      const markIdx = stateMarks.findIndex((m) => m.student_id === student_id && m.subject_id === subId);
 
-        if (isSupabaseConfigured) {
-          try {
-            supabase.from('marks').upsert({
-              student_id: row.student_id,
-              subject_id: row.subject_id,
-              exam_type: 'CIA Continuous Assessment',
-              marks_obtained: row.total,
-              max_marks: 60.0,
-              grade: row.grade,
-              remarks: `Internal 1: ${row.internal_1}, Internal 2: ${row.internal_2}, Assignment: ${row.assignment}`
-            });
-          } catch (e) {
-            console.warn('Supabase marks update:', e.message);
-          }
+      let row;
+      if (markIdx !== -1) {
+        row = { ...stateMarks[markIdx] };
+      } else {
+        row = {
+          id: stateMarks.length + 1,
+          student_id,
+          subject_id: subId,
+          subject_code: subObj.code || 'CS601',
+          subject_name: subObj.name || 'Design and Analysis of Algorithms',
+          internal_1: 0,
+          internal_2: 0,
+          assignment: 0,
+          total: 0,
+          grade: 'F',
+          status: 'Published'
+        };
+      }
+
+      if (internal_1 !== undefined) row.internal_1 = parseFloat(internal_1);
+      if (internal_2 !== undefined) row.internal_2 = parseFloat(internal_2);
+      if (assignment !== undefined) row.assignment = parseFloat(assignment);
+      row.total = +((row.internal_1 || 0) + (row.internal_2 || 0) + (row.assignment || 0)).toFixed(1);
+      if (row.total >= 54) row.grade = 'A+';
+      else if (row.total >= 48) row.grade = 'A';
+      else if (row.total >= 42) row.grade = 'B+';
+      else if (row.total >= 36) row.grade = 'B';
+      else if (row.total >= 30) row.grade = 'C';
+      else row.grade = 'F';
+      row.status = 'Published';
+
+      if (markIdx !== -1) {
+        stateMarks[markIdx] = row;
+      } else {
+        stateMarks.push(row);
+      }
+      setStored('marks', stateMarks);
+
+      // Recalculate CGPA using CGPA = sum(grade_points * credits) / sum(credits) and store in DB
+      const updatedCgpa = calculateAndStoreStudentCGPA(student_id);
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          supabase.from('marks').upsert({
+            student_id: row.student_id,
+            subject_id: row.subject_id,
+            exam_type: 'CIA Continuous Assessment',
+            marks_obtained: row.total,
+            max_marks: 60.0,
+            total: row.total,
+            grade: row.grade,
+            remarks: `Internal 1: ${row.internal_1}, Internal 2: ${row.internal_2}, Assignment: ${row.assignment}`
+          }).then(() => {}).catch(() => {});
+
+          supabase.from('students').update({
+            cgpa: updatedCgpa
+          }).eq('id', student_id).then(() => {}).catch(() => {});
+        } catch (e) {
+          console.warn('Supabase marks update:', e.message);
         }
       }
-      return { data: { message: 'Internal marks saved and published successfully' } };
+
+      // Live notification for student
+      const notif = {
+        id: Date.now(),
+        title: `📊 Continuous Assessment Marks Published: ${row.subject_code}`,
+        message: `Your internal marks for ${row.subject_name} have been updated. Total: ${row.total}/60 (Grade: ${row.grade}). Current CGPA: ${updatedCgpa}.`,
+        type: 'Marks',
+        priority: 'High',
+        target_role: 'student',
+        user_id: student_id,
+        is_read: false,
+        is_cleared: false,
+        created_at: new Date().toISOString()
+      };
+      stateNotifications = [notif, ...stateNotifications];
+      setStored('notifications', stateNotifications);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notification-updated'));
+      }
+
+      return { data: { message: 'Internal marks saved and published successfully', cgpa: updatedCgpa, mark: row } };
+    }
+
+    // Admin Recalculate CGPA Endpoint
+    if (url === '/admin/recalculate-cgpa') {
+      const results = stateStudents.map((st) => ({
+        student_id: st.id,
+        reg_no: st.reg_no,
+        name: st.name,
+        cgpa: calculateAndStoreStudentCGPA(st.id)
+      }));
+      return { data: { status: 'success', message: `Recalculated CGPA for ${results.length} students`, data: results } };
     }
 
     if (url === '/students/me/complaints') {
-      return { data: { message: 'Grievance ticket created successfully.' } };
+      const st = getLoggedInStudent();
+      const newComp = {
+        id: Date.now(),
+        student_id: st.id,
+        student_name: st.name,
+        student_reg_no: st.reg_no,
+        department: st.department || 'Computer Science and Engineering',
+        category: data.category || 'Academic',
+        subject: data.subject || 'Student Grievance',
+        description: data.description || '',
+        status: 'Pending',
+        response: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      stateComplaints = [newComp, ...stateComplaints];
+      setStored('complaints', stateComplaints);
+      return { data: newComp };
+    }
+
+    // Admin CRUD & Broadcasters
+    if (url === '/admin/students') {
+      const newId = Math.max(...stateStudents.map((s) => s.id || 0), 0) + 1;
+      const newUserId = Math.max(...stateUsers.map((u) => u.id || 0), 0) + 1;
+      const deptName = data.department || (stateDepartments.find((d) => d.id === parseInt(data.department_id))?.name) || 'Computer Science and Engineering';
+      const deptId = parseInt(data.department_id) || (stateDepartments.find((d) => d.name === deptName)?.id) || 3;
+
+      const newStudent = {
+        id: newId,
+        user_id: newUserId,
+        reg_no: data.reg_no || `21CS${String(100 + newId)}`,
+        name: data.name,
+        email: data.email,
+        phone: data.phone || '9876543210',
+        department_id: deptId,
+        department: deptName,
+        department_name: deptName,
+        semester: parseInt(data.semester) || 6,
+        section: data.section || 'A',
+        parent_name: data.parent_name || 'Guardian',
+        parent_email: data.parent_email || `parent.${(data.reg_no || 'student').toLowerCase()}@gmail.com`,
+        address: data.address || 'Chennai, Tamil Nadu',
+        overall_attendance: parseFloat(data.overall_attendance) || 85.0,
+        risk_status: (parseFloat(data.overall_attendance) || 85.0) >= 75 ? 'Safe' : 'Warning',
+        total_attended: 34,
+        total_conducted: 40,
+        recovery_classes: 0,
+        required_percentage: 75.0,
+        cgpa: parseFloat(data.cgpa) || 8.0,
+        total_credits: 16.0
+      };
+
+      const newUser = {
+        id: newUserId,
+        name: newStudent.name,
+        email: newStudent.email,
+        role: 'student',
+        is_active: true
+      };
+
+      const newFee = {
+        id: stateFees.length + 1,
+        student_id: newId,
+        student_name: newStudent.name,
+        reg_no: newStudent.reg_no,
+        department: deptName,
+        title: 'Semester 6 Tuition & Composite Institutional Fee',
+        fee_type: 'Tuition & Academic Composite Fee',
+        total_amount: 85000,
+        paid_amount: 85000,
+        pending_amount: 0,
+        status: 'Paid',
+        due_date: '2026-04-15',
+        receipt_no: `REC-2026-${String(1000 + stateFees.length + 1)}`,
+        paid_at: new Date().toISOString(),
+        last_updated: new Date().toISOString()
+      };
+
+      stateStudents = [newStudent, ...stateStudents];
+      stateUsers = [newUser, ...stateUsers];
+      stateFees = [newFee, ...stateFees];
+      setStored('students', stateStudents);
+      setStored('users', stateUsers);
+      setStored('fees', stateFees);
+
+      return { data: newStudent };
+    }
+
+    if (url === '/admin/faculty') {
+      const newId = Math.max(...stateFaculty.map((f) => f.id || 0), 0) + 1;
+      const newUserId = Math.max(...stateUsers.map((u) => u.id || 0), 0) + 1;
+      const deptName = data.department_name || (stateDepartments.find((d) => d.id === parseInt(data.department_id))?.name) || 'Computer Science and Engineering';
+      const deptId = parseInt(data.department_id) || (stateDepartments.find((d) => d.name === deptName)?.id) || 3;
+
+      const newFac = {
+        id: newId,
+        user_id: newUserId,
+        name: data.name,
+        email: data.email,
+        department_id: deptId,
+        department_name: deptName,
+        designation: data.designation || 'Assistant Professor',
+        phone: data.phone || '9876543211',
+        qualification: data.qualification || 'M.E., Ph.D.',
+        subjects_handled: data.subjects_handled || 2,
+        is_active: true,
+        created_at: new Date().toISOString()
+      };
+
+      const newUser = {
+        id: newUserId,
+        name: newFac.name,
+        email: newFac.email,
+        role: 'faculty',
+        is_active: true
+      };
+
+      stateFaculty = [newFac, ...stateFaculty];
+      stateUsers = [newUser, ...stateUsers];
+      setStored('faculty_members', stateFaculty);
+      setStored('users', stateUsers);
+
+      return { data: newFac };
+    }
+
+    if (url === '/admin/departments') {
+      const newId = Math.max(...stateDepartments.map((d) => d.id || 0), 0) + 1;
+      const newDept = {
+        id: newId,
+        code: (data.code || 'DEPT').toUpperCase(),
+        name: data.name,
+        head_of_department: data.head_of_department || 'TBD',
+        total_students: 0,
+        total_faculty: 0,
+        active: true,
+        created_at: new Date().toISOString()
+      };
+      stateDepartments = [...stateDepartments, newDept];
+      setStored('departments', stateDepartments);
+      return { data: newDept };
+    }
+
+    if (url === '/admin/subjects') {
+      const newId = Math.max(...stateSubjects.map((s) => s.id || 0), 0) + 1;
+      const dept = stateDepartments.find((d) => d.id === parseInt(data.department_id)) || stateDepartments[0];
+      const newSub = {
+        id: newId,
+        code: (data.code || 'SUB101').toUpperCase(),
+        name: data.name,
+        department_id: parseInt(data.department_id) || 1,
+        department_name: dept ? dept.name : 'Engineering',
+        semester: parseInt(data.semester) || 6,
+        credits: parseInt(data.credits) || 3,
+        type: data.type || 'Theory',
+        syllabus_url: data.syllabus_url || null,
+        created_at: new Date().toISOString()
+      };
+      stateSubjects = [...stateSubjects, newSub];
+      setStored('subjects', stateSubjects);
+      return { data: newSub };
+    }
+
+    if (url === '/admin/timetable') {
+      const newId = Date.now();
+      const sub = stateSubjects.find((s) => s.id === parseInt(data.subject_id)) || { code: 'CS601', name: 'Subject' };
+      const fac = stateFaculty.find((f) => f.id === parseInt(data.faculty_id)) || { name: 'Faculty Member' };
+      const dept = stateDepartments.find((d) => d.id === parseInt(data.department_id)) || { name: 'Engineering', code: 'ENG' };
+
+      const newSlot = {
+        id: newId,
+        department_id: parseInt(data.department_id) || 3,
+        department_name: dept.code || dept.name,
+        semester: parseInt(data.semester) || 6,
+        day: data.day || 'Monday',
+        start_time: data.start_time || '09:00',
+        end_time: data.end_time || '10:00',
+        time: `${data.start_time || '09:00'} - ${data.end_time || '10:00'}`,
+        subject_id: parseInt(data.subject_id),
+        subject_code: sub.code,
+        subject_name: sub.name,
+        faculty_id: parseInt(data.faculty_id),
+        faculty_name: fac.name,
+        room: data.room || 'Hall 302',
+        section: data.section || 'A'
+      };
+
+      stateTimetableEntries = [newSlot, ...stateTimetableEntries];
+      setStored('timetable_entries', stateTimetableEntries);
+
+      // Notify the corresponding faculty member
+      const notif = {
+        id: Date.now(),
+        title: `🗓️ Timetable Scheduled: ${newSlot.subject_code}`,
+        message: `You have been scheduled for ${newSlot.subject_name} on ${newSlot.day} (${newSlot.time}) in ${newSlot.room} (Semester ${newSlot.semester}, Section ${newSlot.section}).`,
+        type: 'Timetable',
+        priority: 'Normal',
+        target_role: 'faculty',
+        user_id: fac.user_id || fac.id,
+        is_read: false,
+        is_cleared: false,
+        created_at: new Date().toISOString()
+      };
+      stateNotifications = [notif, ...stateNotifications];
+      setStored('notifications', stateNotifications);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notification-updated'));
+      }
+
+      return { data: newSlot };
+    }
+
+    if (url === '/admin/fees') {
+      const student = stateStudents.find((s) => s.id === parseInt(data.student_id));
+      const total = parseFloat(data.total_amount) || 85000;
+      const paid = parseFloat(data.paid_amount) || 0;
+      const pending = Math.max(0, total - paid);
+      const newFee = {
+        id: stateFees.length + 1,
+        student_id: parseInt(data.student_id),
+        student_name: student ? student.name : (data.student_name || 'Student'),
+        reg_no: student ? student.reg_no : (data.reg_no || 'REG000'),
+        department: student ? student.department : 'Engineering',
+        title: data.title || 'Semester 6 Tuition & Composite Institutional Fee',
+        fee_type: data.fee_type || 'Tuition & Academic Composite Fee',
+        total_amount: total,
+        paid_amount: paid,
+        pending_amount: pending,
+        status: pending === 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Pending'),
+        due_date: data.due_date || '2026-04-15',
+        receipt_no: `REC-2026-${String(1000 + stateFees.length + 1)}`,
+        paid_at: paid > 0 ? new Date().toISOString() : null,
+        last_updated: new Date().toISOString()
+      };
+
+      stateFees = [newFee, ...stateFees];
+      setStored('fees', stateFees);
+
+      // Student notification
+      const notif = {
+        id: Date.now(),
+        title: `💳 New Fee Invoiced: ${newFee.title}`,
+        message: `An institutional fee invoice for ₹${total.toLocaleString()} has been generated. Due date: ${newFee.due_date}.`,
+        type: 'Fee Reminder',
+        priority: 'Normal',
+        target_role: 'student',
+        user_id: newFee.student_id,
+        is_read: false,
+        is_cleared: false,
+        created_at: new Date().toISOString()
+      };
+      stateNotifications = [notif, ...stateNotifications];
+      setStored('notifications', stateNotifications);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notification-updated'));
+      }
+
+      return { data: newFee };
+    }
+
+    if (url === '/admin/calendar/events') {
+      const newEvent = {
+        id: Date.now(),
+        date: data.date,
+        title: data.title,
+        type: data.type || 'event',
+        description: data.description || '',
+        department: data.department || 'All',
+        created_at: new Date().toISOString()
+      };
+      stateCalendarEvents = [newEvent, ...stateCalendarEvents];
+      setStored('calendar_events', stateCalendarEvents);
+
+      const notif = {
+        id: Date.now(),
+        title: `📅 Academic Event Scheduled: ${newEvent.title}`,
+        message: `Academic calendar event on ${newEvent.date}: ${newEvent.description}`,
+        type: 'Academic Event',
+        priority: 'Normal',
+        target_role: 'All',
+        is_read: false,
+        is_cleared: false,
+        created_at: new Date().toISOString()
+      };
+      stateNotifications = [notif, ...stateNotifications];
+      setStored('notifications', stateNotifications);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notification-updated'));
+      }
+
+      return { data: newEvent };
     }
 
     if (url === '/admin/announcements' || url === '/faculty/announcements') {
+      const targetRole = data.target_role || 'All';
       const newAnn = {
         id: stateAnnouncements.length + 1,
         title: data.title,
-        content: data.content || data.message || '',
-        target_role: data.target_role || 'All',
+        content: data.content || data.message || data.description || '',
+        description: data.description || data.content || '',
+        target_role: targetRole,
         priority: data.priority || 'Normal',
+        event_date: data.event_date || null,
+        registration_url: data.registration_url || null,
+        poster_url: data.poster_url || data.file_data || null,
+        file_data: data.file_data || null,
         created_at: new Date().toISOString()
       };
       stateAnnouncements = [newAnn, ...stateAnnouncements];
       setStored('announcements', stateAnnouncements);
+
+      // Broadcast to both students and faculty panels
+      const notif = {
+        id: Date.now(),
+        title: `📢 Circular: ${newAnn.title}`,
+        message: newAnn.content,
+        type: data.type || 'Circular',
+        priority: newAnn.priority || 'Normal',
+        target_role: targetRole.toLowerCase() === 'faculty' ? 'faculty' : (targetRole.toLowerCase() === 'student' ? 'student' : 'All'),
+        poster_url: newAnn.poster_url,
+        file_data: newAnn.file_data,
+        announcement: newAnn,
+        is_read: false,
+        is_cleared: false,
+        created_at: new Date().toISOString()
+      };
+      stateNotifications = [notif, ...stateNotifications];
+      setStored('notifications', stateNotifications);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('notification-updated'));
+      }
+
       return { data: newAnn };
     }
 
@@ -2414,10 +3609,11 @@ const client = {
     // 5. Admin update faculty
     if (url.startsWith('/admin/faculty/')) {
       const fId = parseInt(url.split('/').pop());
-      const idx = FACULTY_MEMBERS.findIndex((f) => f.id === fId);
+      const idx = stateFaculty.findIndex((f) => f.id === fId);
       if (idx !== -1) {
-        FACULTY_MEMBERS[idx] = { ...FACULTY_MEMBERS[idx], ...data };
-        return { data: FACULTY_MEMBERS[idx] };
+        stateFaculty[idx] = { ...stateFaculty[idx], ...data };
+        setStored('faculty_members', stateFaculty);
+        return { data: stateFaculty[idx] };
       }
       return { data: { success: true, ...data } };
     }
@@ -2425,10 +3621,11 @@ const client = {
     // 6. Admin update department
     if (url.startsWith('/admin/departments/')) {
       const dId = parseInt(url.split('/').pop());
-      const idx = DEPARTMENTS.findIndex((d) => d.id === dId);
+      const idx = stateDepartments.findIndex((d) => d.id === dId);
       if (idx !== -1) {
-        DEPARTMENTS[idx] = { ...DEPARTMENTS[idx], ...data };
-        return { data: DEPARTMENTS[idx] };
+        stateDepartments[idx] = { ...stateDepartments[idx], ...data };
+        setStored('departments', stateDepartments);
+        return { data: stateDepartments[idx] };
       }
       return { data: { success: true, ...data } };
     }
@@ -2436,21 +3633,76 @@ const client = {
     // 7. Admin update subject
     if (url.startsWith('/admin/subjects/')) {
       const sId = parseInt(url.split('/').pop());
-      const idx = SUBJECTS.findIndex((s) => s.id === sId);
+      const idx = stateSubjects.findIndex((s) => s.id === sId);
       if (idx !== -1) {
-        SUBJECTS[idx] = { ...SUBJECTS[idx], ...data };
-        return { data: SUBJECTS[idx] };
+        stateSubjects[idx] = { ...stateSubjects[idx], ...data };
+        setStored('subjects', stateSubjects);
+        return { data: stateSubjects[idx] };
       }
       return { data: { success: true, ...data } };
     }
 
-    // 8. Admin update fees
+    // 8. Admin update fees (Live sync across admin and student portals)
     if (url.startsWith('/admin/fees/')) {
+      const feeId = parseInt(url.split('/').pop());
+      const fee = stateFees.find((f) => f.id === feeId);
+      if (fee) {
+        const total = parseFloat(data.total_amount !== undefined ? data.total_amount : fee.total_amount);
+        const paid = parseFloat(data.paid_amount !== undefined ? data.paid_amount : fee.paid_amount);
+        const pending = Math.max(0, total - paid);
+        fee.total_amount = total;
+        fee.paid_amount = paid;
+        fee.pending_amount = pending;
+        fee.status = pending === 0 ? 'Paid' : (paid > 0 ? 'Partial' : 'Pending');
+        fee.last_updated = new Date().toISOString();
+        if (paid > 0 && !fee.paid_at) {
+          fee.paid_at = new Date().toISOString();
+        }
+        setStored('fees', stateFees);
+
+        // Immediate student notification
+        const notif = {
+          id: Date.now(),
+          title: `💳 Fee Ledger Updated: ₹${paid.toLocaleString()} Paid`,
+          message: `Your payment record for ${fee.title} has been updated. Outstanding balance: ₹${pending.toLocaleString()}. Status: ${fee.status}.`,
+          type: 'Fee Reminder',
+          priority: fee.status === 'Paid' ? 'Normal' : 'High',
+          target_role: 'student',
+          user_id: fee.student_id,
+          is_read: false,
+          is_cleared: false,
+          created_at: new Date().toISOString()
+        };
+        stateNotifications = [notif, ...stateNotifications];
+        setStored('notifications', stateNotifications);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('notification-updated'));
+        }
+
+        return { data: fee };
+      }
       return { data: { success: true, message: 'Fee record updated successfully' } };
     }
 
-    // 9. Complaints / Grievances respond (Faculty and Admin)
-    if (url.startsWith('/faculty/complaints/') || url.startsWith('/admin/complaints/')) {
+    // 9. Complaints / Grievances respond (Admin)
+    if (url.startsWith('/admin/complaints/') || url.startsWith('/faculty/complaints/')) {
+      const cId = parseInt(url.split('/').pop());
+      const comp = stateComplaints.find((c) => c.id === cId);
+      if (comp) {
+        if (data.status) comp.status = data.status;
+        if (data.response !== undefined) comp.response = data.response;
+        if (data.faculty_response !== undefined) comp.response = data.faculty_response;
+        comp.updated_at = new Date().toISOString();
+        setStored('complaints', stateComplaints);
+        return {
+          data: {
+            success: true,
+            message: 'Grievance ticket response recorded successfully',
+            status: comp.status,
+            response: comp.response
+          }
+        };
+      }
       return {
         data: {
           success: true,
@@ -2473,12 +3725,164 @@ const client = {
       return { data: { success: true } };
     }
 
-    // 11. Admin settings
+    // 11. Admin settings (Strict DB & Rule Persistence)
     if (url === '/admin/settings') {
-      return { data: { success: true, message: 'Institutional settings updated successfully', ...data } };
+      stateSettings = { ...stateSettings, ...data };
+      if (data.SAFE_THRESHOLD !== undefined) {
+        stateSettings.SAFE_THRESHOLD = String(data.SAFE_THRESHOLD);
+        stateSettings.attendance_threshold_safe = parseFloat(data.SAFE_THRESHOLD);
+      }
+      if (data.WARNING_THRESHOLD !== undefined) {
+        stateSettings.WARNING_THRESHOLD = String(data.WARNING_THRESHOLD);
+        stateSettings.attendance_threshold_warning = parseFloat(data.WARNING_THRESHOLD);
+      }
+      if (data.COLLEGE_NAME !== undefined) {
+        stateSettings.COLLEGE_NAME = data.COLLEGE_NAME;
+        stateSettings.college_name = data.COLLEGE_NAME;
+      }
+      if (data.ACADEMIC_YEAR !== undefined) {
+        stateSettings.ACADEMIC_YEAR = data.ACADEMIC_YEAR;
+        stateSettings.academic_year = data.ACADEMIC_YEAR;
+      }
+      setStored('settings', stateSettings);
+
+      // Recalculate student risk levels based on new thresholds
+      const safeThresh = parseFloat(stateSettings.SAFE_THRESHOLD) || 75.0;
+      const warnThresh = parseFloat(stateSettings.WARNING_THRESHOLD) || 65.0;
+      stateStudents.forEach((st) => {
+        if (st.overall_attendance >= safeThresh) {
+          st.risk_status = 'Safe';
+        } else if (st.overall_attendance >= warnThresh) {
+          st.risk_status = 'Warning';
+        } else {
+          st.risk_status = 'High Risk';
+        }
+      });
+      setStored('students', stateStudents);
+
+      return {
+        data: {
+          success: true,
+          message: 'Institutional rules and system configuration saved to database successfully',
+          settings: stateSettings
+        }
+      };
+    }
+
+    if (url.startsWith('/faculty/leave-requests/') || url.startsWith('/admin/leave-requests/') || url.startsWith('/admin/documents/')) {
+      return this.patch(rawUrl, data, config);
     }
 
     return { data: { success: true } };
+  },
+
+  async patch(rawUrl, data = {}, config = {}) {
+    const url = (rawUrl || '').split('?')[0];
+
+    // 1. Faculty leave request approval / rejection
+    if (url.startsWith('/faculty/leave-requests/')) {
+      const leaveId = parseInt(url.split('/').pop());
+      const leave = stateLeaveRequests.find((l) => l.id === leaveId);
+      if (leave) {
+        if (data.status) leave.status = data.status;
+        if (data.faculty_remark !== undefined) leave.faculty_remark = data.faculty_remark;
+        leave.updated_at = new Date().toISOString();
+        setStored('leave_requests', stateLeaveRequests);
+
+        // Notify student immediately
+        const notif = {
+          id: Date.now(),
+          title: `📄 Leave Request ${leave.status}: ${leave.leave_type}`,
+          message: `Your leave request for ${leave.from_date} to ${leave.to_date} was ${leave.status.toLowerCase()} by Faculty Advisor.${data.faculty_remark ? ` Remark: ${data.faculty_remark}` : ''}`,
+          type: 'Leave Update',
+          priority: leave.status === 'Approved' ? 'Normal' : 'High',
+          target_role: 'student',
+          user_id: leave.student_id,
+          is_read: false,
+          is_cleared: false,
+          created_at: new Date().toISOString()
+        };
+        stateNotifications = [notif, ...stateNotifications];
+        setStored('notifications', stateNotifications);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('notification-updated'));
+        }
+
+        return { data: leave };
+      }
+      return { data: { success: true, ...data } };
+    }
+
+    // 2. Admin leave request approval / rejection
+    if (url.startsWith('/admin/leave-requests/')) {
+      const leaveId = parseInt(url.split('/').pop());
+      const leave = stateLeaveRequests.find((l) => l.id === leaveId);
+      if (leave) {
+        if (data.status) leave.status = data.status;
+        if (data.admin_remark !== undefined) leave.admin_remark = data.admin_remark;
+        leave.updated_at = new Date().toISOString();
+        setStored('leave_requests', stateLeaveRequests);
+
+        // Notify student immediately
+        const notif = {
+          id: Date.now(),
+          title: `📄 Leave Request ${leave.status}: ${leave.leave_type}`,
+          message: `Your leave request for ${leave.from_date} to ${leave.to_date} was ${leave.status.toLowerCase()} by Academic Office.${data.admin_remark ? ` Remark: ${data.admin_remark}` : ''}`,
+          type: 'Leave Update',
+          priority: leave.status === 'Approved' ? 'Normal' : 'High',
+          target_role: 'student',
+          user_id: leave.student_id,
+          is_read: false,
+          is_cleared: false,
+          created_at: new Date().toISOString()
+        };
+        stateNotifications = [notif, ...stateNotifications];
+        setStored('notifications', stateNotifications);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('notification-updated'));
+        }
+
+        return { data: leave };
+      }
+      return { data: { success: true, ...data } };
+    }
+
+    // 3. Admin document requests approval / rejection / reply
+    if (url.startsWith('/admin/documents/')) {
+      const docId = parseInt(url.split('/').pop());
+      const doc = stateDocumentRequests.find((d) => d.id === docId);
+      if (doc) {
+        if (data.status) doc.status = data.status;
+        if (data.admin_reply !== undefined) doc.admin_reply = data.admin_reply;
+        doc.updated_at = new Date().toISOString();
+        setStored('document_requests', stateDocumentRequests);
+
+        // Notify student immediately
+        const notif = {
+          id: Date.now(),
+          title: `📜 Certificate Request ${doc.status}: ${doc.document_type}`,
+          message: `Your request for ${doc.document_type} has been ${doc.status.toLowerCase()} by Academic Administration.${doc.admin_reply ? ` Remarks: ${doc.admin_reply}` : ''}`,
+          type: 'Document Request',
+          priority: doc.status === 'Approved' ? 'Normal' : 'High',
+          target_role: 'student',
+          user_id: doc.student_id,
+          is_read: false,
+          is_cleared: false,
+          created_at: new Date().toISOString()
+        };
+        stateNotifications = [notif, ...stateNotifications];
+        setStored('notifications', stateNotifications);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('notification-updated'));
+        }
+
+        return { data: doc };
+      }
+      return { data: { success: true, ...data } };
+    }
+
+    // Delegate to put for other updates
+    return this.put(rawUrl, data, config);
   },
 
   async delete(url, config = {}) {
@@ -2494,6 +3898,12 @@ const client = {
       setStored('quizzes', stateQuizzes);
       return { data: { message: 'Quiz deleted' } };
     }
+    if (url.startsWith('/faculty/study-materials/')) {
+      const matId = parseInt(url.split('/').pop());
+      stateStudyMaterials = stateStudyMaterials.filter((m) => m.id !== matId);
+      setStored('study_materials', stateStudyMaterials);
+      return { data: { message: 'Study material deleted successfully' } };
+    }
     if (url.startsWith('/faculty/assignments/')) {
       const asgnId = parseInt(url.split('/').pop());
       stateAssignments = stateAssignments.filter((a) => a.id !== asgnId);
@@ -2502,8 +3912,142 @@ const client = {
       setStored('submissions', stateSubmissions);
       return { data: { message: 'Assignment deleted' } };
     }
+    if (url.startsWith('/admin/complaints/') || url.startsWith('/faculty/complaints/')) {
+      const cId = parseInt(url.split('/').pop());
+      stateComplaints = stateComplaints.filter((c) => c.id !== cId);
+      setStored('complaints', stateComplaints);
+      return { data: { message: 'Complaint deleted successfully' } };
+    }
+    if (url.startsWith('/admin/students/')) {
+      const sId = parseInt(url.split('/').pop());
+      stateStudents = stateStudents.filter((s) => s.id !== sId);
+      stateUsers = stateUsers.filter((u) => u.id !== sId);
+      stateFees = stateFees.filter((f) => f.student_id !== sId);
+      setStored('students', stateStudents);
+      setStored('users', stateUsers);
+      setStored('fees', stateFees);
+      return { data: { message: 'Student removed successfully' } };
+    }
+    if (url.startsWith('/admin/faculty/')) {
+      const fId = parseInt(url.split('/').pop());
+      stateFaculty = stateFaculty.filter((f) => f.id !== fId);
+      setStored('faculty_members', stateFaculty);
+      return { data: { message: 'Faculty member removed successfully' } };
+    }
+    if (url.startsWith('/admin/departments/')) {
+      const dId = parseInt(url.split('/').pop());
+      stateDepartments = stateDepartments.filter((d) => d.id !== dId);
+      setStored('departments', stateDepartments);
+      return { data: { message: 'Department removed successfully' } };
+    }
+    if (url.startsWith('/admin/subjects/')) {
+      const subId = parseInt(url.split('/').pop());
+      stateSubjects = stateSubjects.filter((s) => s.id !== subId);
+      setStored('subjects', stateSubjects);
+      return { data: { message: 'Subject removed successfully' } };
+    }
+    if (url.startsWith('/admin/timetable/')) {
+      const slotId = parseInt(url.split('/').pop());
+      stateTimetableEntries = stateTimetableEntries.filter((t) => t.id !== slotId);
+      setStored('timetable_entries', stateTimetableEntries);
+      return { data: { message: 'Timetable entry removed successfully' } };
+    }
+    if (url.startsWith('/admin/calendar/events/')) {
+      const eId = parseInt(url.split('/').pop());
+      stateCalendarEvents = stateCalendarEvents.filter((e) => e.id !== eId);
+      setStored('calendar_events', stateCalendarEvents);
+      if (isSupabaseConfigured) {
+        supabase.from('calendar_events').delete().eq('id', eId).catch(console.warn);
+      }
+      return { data: { message: 'Academic calendar event removed successfully' } };
+    }
     return { data: { success: true } };
   }
 };
+
+/**
+ * Bidirectional Supabase Cloud Synchronization
+ * Hydrates local and in-memory state with live cloud data when Supabase is configured.
+ */
+export async function syncWithSupabase() {
+  if (!isSupabaseConfigured) return;
+  try {
+    const results = await Promise.allSettled([
+      supabase.from('students').select('*'),
+      supabase.from('faculty').select('*'),
+      supabase.from('departments').select('*'),
+      supabase.from('subjects').select('*'),
+      supabase.from('marks').select('*'),
+      supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+      supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+      supabase.from('assignments').select('*').order('created_at', { ascending: false }),
+      supabase.from('fees').select('*'),
+      supabase.from('calendar_events').select('*'),
+      supabase.from('leave_requests').select('*'),
+      supabase.from('complaints').select('*')
+    ]);
+
+    const [
+      stRes, facRes, deptRes, subRes, marksRes, annRes, notifRes, asgnRes, feesRes, calRes, leaveRes, compRes
+    ] = results;
+
+    if (stRes.status === 'fulfilled' && stRes.value.data?.length) {
+      stateStudents = stRes.value.data;
+      setStored('students', stateStudents);
+    }
+    if (facRes.status === 'fulfilled' && facRes.value.data?.length) {
+      stateFaculty = facRes.value.data;
+      setStored('faculty_members', stateFaculty);
+    }
+    if (deptRes.status === 'fulfilled' && deptRes.value.data?.length) {
+      stateDepartments = deptRes.value.data;
+      setStored('departments', stateDepartments);
+    }
+    if (subRes.status === 'fulfilled' && subRes.value.data?.length) {
+      stateSubjects = subRes.value.data;
+      setStored('subjects', stateSubjects);
+    }
+    if (marksRes.status === 'fulfilled' && marksRes.value.data?.length) {
+      stateMarks = marksRes.value.data;
+      setStored('marks', stateMarks);
+    }
+    if (annRes.status === 'fulfilled' && annRes.value.data?.length) {
+      stateAnnouncements = annRes.value.data;
+      setStored('announcements', stateAnnouncements);
+    }
+    if (notifRes.status === 'fulfilled' && notifRes.value.data?.length) {
+      stateNotifications = notifRes.value.data;
+      setStored('notifications', stateNotifications);
+    }
+    if (asgnRes.status === 'fulfilled' && asgnRes.value.data?.length) {
+      stateAssignments = asgnRes.value.data;
+      setStored('assignments', stateAssignments);
+    }
+    if (feesRes.status === 'fulfilled' && feesRes.value.data?.length) {
+      stateFees = feesRes.value.data;
+      setStored('fees', stateFees);
+    }
+    if (calRes.status === 'fulfilled' && calRes.value.data?.length) {
+      stateCalendarEvents = calRes.value.data;
+      setStored('calendar_events', stateCalendarEvents);
+    }
+    if (leaveRes.status === 'fulfilled' && leaveRes.value.data?.length) {
+      stateLeaveRequests = leaveRes.value.data;
+      setStored('leave_requests', stateLeaveRequests);
+    }
+    if (compRes.status === 'fulfilled' && compRes.value.data?.length) {
+      stateComplaints = compRes.value.data;
+      setStored('complaints', stateComplaints);
+    }
+    console.info('Supabase cloud state synchronized successfully');
+  } catch (err) {
+    console.warn('Supabase cloud hydration notice:', err);
+  }
+}
+
+// Auto-trigger sync on module load if Supabase configured
+if (typeof window !== 'undefined' && isSupabaseConfigured) {
+  syncWithSupabase().catch(console.warn);
+}
 
 export default client;

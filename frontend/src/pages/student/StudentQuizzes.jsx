@@ -400,51 +400,94 @@ export default function StudentQuizzes() {
 
             {/* Question Breakdown */}
             <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Detailed Question Review &amp; Answer Key
-              </h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Question-by-Question Evaluation &amp; Solutions
+                </h4>
+                <span className="text-[11px] font-semibold text-slate-500">
+                  {((resultsData?.breakdown || resultsData?.questions || []).filter(q => q.is_correct)).length} / {(resultsData?.breakdown || resultsData?.questions || []).length} Correct
+                </span>
+              </div>
 
-              {(resultsData?.breakdown || []).map((item, idx) => (
+              {(resultsData?.breakdown || resultsData?.questions || []).map((item, idx) => (
                 <div
-                  key={item.question_id}
-                  className={`border rounded-xl p-4 space-y-2.5 ${
+                  key={item.id || item.question_id || idx}
+                  className={`border rounded-xl p-4 space-y-3 transition ${
                     item.is_correct
-                      ? 'border-emerald-200 bg-emerald-50/20'
-                      : 'border-rose-200 bg-rose-50/20'
+                      ? 'border-emerald-200 bg-emerald-50/25'
+                      : 'border-rose-200/80 bg-rose-50/25'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs font-bold text-slate-900">
-                      Q{idx + 1}. {item.question_text}
-                    </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2">
+                      <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                        item.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {idx + 1}
+                      </span>
+                      <p className="text-xs font-bold text-slate-900 leading-snug">
+                        {item.question_text}
+                      </p>
+                    </div>
                     <span
-                      className={`text-[11px] font-bold px-2 py-0.5 rounded whitespace-nowrap ${
+                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${
                         item.is_correct
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-rose-100 text-rose-800'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-rose-100 text-rose-800 border border-rose-300'
                       }`}
                     >
-                      {item.marks_awarded} / {item.marks} Marks
+                      {item.marks_awarded ?? (item.is_correct ? item.marks : 0)} / {item.marks} Marks
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-slate-500">Your Answer:</span>
-                      <span className={`font-bold ${item.is_correct ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {item.selected_answer || 'None (Unanswered)'}
-                      </span>
-                    </div>
+                  {/* MCQ Options List */}
+                  {item.options && item.options.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      {item.options.map((opt) => {
+                        const isSelected = item.selected_answer === opt.id;
+                        const isCorrectOpt = item.correct_answer === opt.id;
 
-                    <div className="flex items-center space-x-1.5">
-                      <span className="text-slate-500">Correct Answer:</span>
-                      <span className="font-bold text-emerald-700">{item.correct_answer}</span>
+                        let optClass = 'bg-white border-slate-200 text-slate-700';
+                        let badge = null;
+
+                        if (isSelected && isCorrectOpt) {
+                          optClass = 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold ring-1 ring-emerald-200';
+                          badge = <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded">Your Answer (Correct)</span>;
+                        } else if (isSelected && !isCorrectOpt) {
+                          optClass = 'bg-rose-50 border-rose-300 text-rose-900 font-semibold ring-1 ring-rose-200';
+                          badge = <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded">Your Answer (Incorrect)</span>;
+                        } else if (isCorrectOpt) {
+                          optClass = 'bg-emerald-50/60 border-emerald-300 text-emerald-900 font-semibold';
+                          badge = <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded">Correct Solution</span>;
+                        }
+
+                        return (
+                          <div
+                            key={opt.id}
+                            className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${optClass}`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[11px] ${
+                                isCorrectOpt ? 'bg-emerald-200 text-emerald-900' : isSelected ? 'bg-rose-200 text-rose-900' : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {opt.id}
+                              </span>
+                              <span className="truncate">{opt.text}</span>
+                            </div>
+                            {badge}
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
+                  )}
 
                   {item.explanation && (
-                    <div className="p-2.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 mt-2">
-                      <strong className="text-slate-800">Explanation:</strong> {item.explanation}
+                    <div className="p-3 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 mt-2 flex items-start gap-2">
+                      <HelpCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-slate-800">Concept Explanation: </strong>
+                        <span>{item.explanation}</span>
+                      </div>
                     </div>
                   )}
                 </div>

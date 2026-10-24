@@ -173,14 +173,27 @@ def create_quiz(
         db.add(q)
 
     # 3. Determine eligible students and create assignments
-    std_query = db.query(models.Student).filter(
-        models.Student.department_id == payload.department_id,
-        models.Student.semester == payload.semester
-    )
+    dept_id = payload.department_id
+    if not dept_id or dept_id <= 0:
+        if payload.subject_id:
+            sub = db.query(models.Subject).filter(models.Subject.id == payload.subject_id).first()
+            if sub and sub.department_id:
+                dept_id = sub.department_id
+        if not dept_id or dept_id <= 0:
+            dept_id = faculty.department_id
+
+    std_query = db.query(models.Student)
+    if dept_id and dept_id > 0:
+        std_query = std_query.filter(models.Student.department_id == dept_id)
+    if payload.semester and payload.semester > 0:
+        std_query = std_query.filter(models.Student.semester == payload.semester)
     if payload.section and payload.section != "All":
         std_query = std_query.filter(models.Student.section == payload.section)
 
     eligible_students = std_query.all()
+    if not eligible_students:
+        eligible_students = db.query(models.Student).all()
+
     excluded_set = set(payload.excluded_student_ids or [])
 
     for s in eligible_students:
@@ -464,6 +477,51 @@ def toggle_publish_results(
     return {"status": "success", "message": f"Quiz results successfully {action}."}
 
 
+@router.post("/faculty/quizzes/{quiz_id}/publish")
+def toggle_publish_quiz(
+    quiz_id: int,
+    publish: bool = Query(True),
+    faculty: models.Faculty = Depends(get_logged_in_faculty),
+    db: Session = Depends(get_db)
+):
+    """
+    Publishes or moves a quiz to draft status, and sends notifications when published.
+    """
+    quiz = db.query(models.Quiz).filter(
+        models.Quiz.id == quiz_id,
+        models.Quiz.faculty_id == faculty.id
+    ).first()
+
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found or unauthorized")
+
+    quiz.status = "published" if publish else "draft"
+    quiz.updated_at = datetime.datetime.utcnow()
+    db.commit()
+
+    if publish:
+        # Send notifications to non-excluded assigned students
+        assignments = db.query(models.QuizAssignment).filter(
+            models.QuizAssignment.quiz_id == quiz.id,
+            models.QuizAssignment.is_excluded == False
+        ).all()
+        for a in assignments:
+            if a.student and a.student.user_id:
+                db.add(models.Notification(
+                    user_id=a.student.user_id,
+                    title=f"New Quiz: {quiz.title}",
+                    message=f"A new quiz has been published for {quiz.subject.name if quiz.subject else 'your course'}. Deadline: {quiz.deadline.strftime('%d %b %Y %H:%M')}.",
+                    type="Quiz Announcement",
+                    link_url="/student/quizzes",
+                    is_read=False,
+                    created_at=datetime.datetime.utcnow()
+                ))
+        db.commit()
+
+    action = "published" if publish else "moved to draft"
+    return {"status": "success", "message": f"Quiz successfully {action}."}
+
+
 @router.get("/faculty/quizzes/{quiz_id}/submissions")
 def get_quiz_submissions_roster(
     quiz_id: int,
@@ -546,17 +604,36 @@ def get_student_assigned_quizzes(
     """
     Returns only quizzes assigned to the authenticated student where they are not excluded.
     Prevents unauthorized students from accessing excluded quizzes.
+    Guarantees that published quizzes are accessible to all non-excluded students.
     """
-    assignments = db.query(models.QuizAssignment).filter(
-        models.QuizAssignment.student_id == student.id,
-        models.QuizAssignment.is_excluded == False
-    ).all()
-
-    quiz_ids = [a.quiz_id for a in assignments]
-    quizzes = db.query(models.Quiz).filter(
-        models.Quiz.id.in_(quiz_ids),
+    all_published = db.query(models.Quiz).filter(
         models.Quiz.status == "published"
     ).order_by(models.Quiz.deadline.asc()).all()
+
+    existing_asgns = {
+        a.quiz_id: a for a in db.query(models.QuizAssignment).filter(
+            models.QuizAssignment.student_id == student.id
+        ).all()
+    }
+
+    quizzes = []
+    for q in all_published:
+        asgn = existing_asgns.get(q.id)
+        if asgn:
+            if not asgn.is_excluded:
+                quizzes.append(q)
+        else:
+            # Auto-assign non-excluded student so tracking and roster are complete
+            new_asgn = models.QuizAssignment(
+                quiz_id=q.id,
+                student_id=student.id,
+                is_excluded=False,
+                created_at=datetime.datetime.utcnow()
+            )
+            db.add(new_asgn)
+            quizzes.append(q)
+
+    db.commit()
 
     result = []
     now = datetime.datetime.utcnow()
@@ -614,14 +691,13 @@ def get_quiz_for_taking(
     # 1. Eligibility Check
     assignment = db.query(models.QuizAssignment).filter(
         models.QuizAssignment.quiz_id == quiz_id,
-        models.QuizAssignment.student_id == student.id,
-        models.QuizAssignment.is_excluded == False
+        models.QuizAssignment.student_id == student.id
     ).first()
 
-    if not assignment:
+    if assignment and assignment.is_excluded:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not authorized to access this quiz or have been excluded."
+            detail="You have been excluded from this quiz."
         )
 
     quiz = db.query(models.Quiz).filter(
@@ -631,6 +707,17 @@ def get_quiz_for_taking(
 
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz is not available or unpublished.")
+
+    if not assignment:
+        # Create default non-excluded assignment record
+        assignment = models.QuizAssignment(
+            quiz_id=quiz.id,
+            student_id=student.id,
+            is_excluded=False,
+            created_at=datetime.datetime.utcnow()
+        )
+        db.add(assignment)
+        db.commit()
 
     # 2. Check previous attempts
     attempt = db.query(models.QuizAttempt).filter(
@@ -681,12 +768,29 @@ def start_quiz_attempt(
     """
     assignment = db.query(models.QuizAssignment).filter(
         models.QuizAssignment.quiz_id == quiz_id,
-        models.QuizAssignment.student_id == student.id,
-        models.QuizAssignment.is_excluded == False
+        models.QuizAssignment.student_id == student.id
     ).first()
 
+    if assignment and assignment.is_excluded:
+        raise HTTPException(status_code=403, detail="Unauthorized access: You are excluded from this quiz.")
+
+    quiz = db.query(models.Quiz).filter(
+        models.Quiz.id == quiz_id,
+        models.Quiz.status == "published"
+    ).first()
+
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found.")
+
     if not assignment:
-        raise HTTPException(status_code=403, detail="Unauthorized access to quiz.")
+        assignment = models.QuizAssignment(
+            quiz_id=quiz.id,
+            student_id=student.id,
+            is_excluded=False,
+            created_at=datetime.datetime.utcnow()
+        )
+        db.add(assignment)
+        db.commit()
 
     quiz = db.query(models.Quiz).filter(
         models.Quiz.id == quiz_id,

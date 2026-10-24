@@ -460,12 +460,16 @@ def update_marks(payload: schemas.MarkCreate, faculty: models.Faculty = Depends(
     else:
         grade = "F"
 
+    from app.cgpa_calculator import calculate_student_cgpa, get_grade_point_from_grade
+    grade_point = get_grade_point_from_grade(grade, total)
+
     if m:
         m.internal_1 = payload.internal_1
         m.internal_2 = payload.internal_2
         m.assignment = payload.assignment
         m.total = total
         m.grade = grade
+        m.grade_point = grade_point
     else:
         m = models.Mark(
             student_id=payload.student_id,
@@ -474,18 +478,33 @@ def update_marks(payload: schemas.MarkCreate, faculty: models.Faculty = Depends(
             internal_2=payload.internal_2,
             assignment=payload.assignment,
             total=total,
-            grade=grade
+            grade=grade,
+            grade_point=grade_point
         )
         db.add(m)
 
     db.commit()
-    return {"status": "success", "message": "Marks updated successfully", "total": total, "grade": grade}
+
+    # Recalculate CGPA using CGPA = sum(grade_points * credits) / sum(credits) and store in DB
+    cgpa_res = calculate_student_cgpa(payload.student_id, db)
+
+    return {
+        "status": "success",
+        "message": "Marks updated successfully",
+        "total": total,
+        "grade": grade,
+        "grade_point": grade_point,
+        "cgpa": cgpa_res["cgpa"]
+    }
 
 @router.get("/timetable")
 def get_faculty_timetable(faculty: models.Faculty = Depends(get_logged_in_faculty), db: Session = Depends(get_db)):
     entries = db.query(models.TimetableEntry).filter(
         models.TimetableEntry.faculty_id == faculty.id
     ).order_by(models.TimetableEntry.day_of_week, models.TimetableEntry.start_time).all()
+
+    if not entries:
+        entries = db.query(models.TimetableEntry).order_by(models.TimetableEntry.day_of_week, models.TimetableEntry.start_time).all()
 
     days_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
     timetable_by_day = {d: [] for d in days_order}
@@ -566,4 +585,144 @@ def respond_to_complaint(
     c.updated_at = datetime.datetime.utcnow()
     db.commit()
     return {"status": "success", "message": "Complaint updated successfully"}
+
+
+# Faculty Leave Management
+@router.get("/leave-requests")
+def get_faculty_leave_requests(faculty: models.Faculty = Depends(get_logged_in_faculty), db: Session = Depends(get_db)):
+    # Faculty sees leaves from their department, or all if none
+    query = db.query(models.LeaveRequest).join(models.Student, models.LeaveRequest.student_id == models.Student.id)
+    dept_leaves = query.filter(models.Student.department_id == faculty.department_id).order_by(models.LeaveRequest.created_at.desc()).all()
+    if not dept_leaves:
+        dept_leaves = query.order_by(models.LeaveRequest.created_at.desc()).all()
+
+    return [
+        {
+            "id": l.id,
+            "student_id": l.student_id,
+            "student_name": l.student.name if l.student else "Student",
+            "reg_no": l.student.reg_no if l.student else "",
+            "department_name": l.student.department.name if l.student and l.student.department else "",
+            "leave_type": l.leave_type,
+            "from_date": l.from_date,
+            "to_date": l.to_date,
+            "reason": l.reason,
+            "status": l.status,
+            "faculty_remark": l.faculty_remark,
+            "admin_remark": l.admin_remark,
+            "created_at": l.created_at.isoformat() if l.created_at else None
+        }
+        for l in dept_leaves
+    ]
+
+@router.patch("/leave-requests/{leave_id}")
+def update_leave_decision(
+    leave_id: int,
+    payload: schemas.LeaveRequestUpdate,
+    faculty: models.Faculty = Depends(get_logged_in_faculty),
+    db: Session = Depends(get_db)
+):
+    leave = db.query(models.LeaveRequest).filter(models.LeaveRequest.id == leave_id).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+
+    leave.status = payload.status
+    if payload.faculty_remark is not None:
+        leave.faculty_remark = payload.faculty_remark
+    leave.reviewed_by = faculty.name
+    leave.updated_at = datetime.datetime.utcnow()
+
+    # Notify student
+    if leave.student and leave.student.user_id:
+        db.add(models.Notification(
+            user_id=leave.student.user_id,
+            title=f"Leave Request {payload.status}: {leave.leave_type}",
+            message=f"Your leave application from {leave.from_date} to {leave.to_date} was marked as {payload.status} by {faculty.name}." + (f" Remark: {payload.faculty_remark}" if payload.faculty_remark else ""),
+            type="Leave Status Update",
+            link_url="/student/leave",
+            is_read=False,
+            created_at=datetime.datetime.utcnow()
+        ))
+
+    db.commit()
+    return {"status": "success", "message": f"Leave request {payload.status.lower()} successfully"}
+
+
+# Faculty Study Materials Management
+@router.get("/study-materials")
+def get_faculty_study_materials(faculty: models.Faculty = Depends(get_logged_in_faculty), db: Session = Depends(get_db)):
+    mats = db.query(models.StudyMaterial).filter(
+        models.StudyMaterial.faculty_id == faculty.id
+    ).order_by(models.StudyMaterial.created_at.desc()).all()
+
+    return [
+        {
+            "id": m.id,
+            "title": m.title,
+            "subject_id": m.subject_id,
+            "subject_name": m.subject.name if m.subject else (m.subject_id and f"Subject {m.subject_id}") or "General",
+            "file_type": m.file_type or "pdf",
+            "file_size": m.file_size or "1.5 MB",
+            "file_url": m.file_url or "",
+            "description": m.description or "",
+            "downloads": m.downloads or 0,
+            "uploaded_at": m.created_at.strftime("%Y-%m-%d") if m.created_at else datetime.date.today().isoformat()
+        }
+        for m in mats
+    ]
+
+@router.post("/study-materials")
+def upload_study_material(
+    payload: schemas.StudyMaterialCreate,
+    faculty: models.Faculty = Depends(get_logged_in_faculty),
+    db: Session = Depends(get_db)
+):
+    mat = models.StudyMaterial(
+        faculty_id=faculty.id,
+        subject_id=payload.subject_id,
+        department_id=payload.department_id or faculty.department_id,
+        semester=payload.semester or 6,
+        title=payload.title.strip(),
+        description=payload.description.strip() if payload.description else None,
+        file_type=payload.file_type or "pdf",
+        file_url=payload.file_url or "",
+        file_size=payload.file_size or "2.0 MB",
+        downloads=0,
+        created_at=datetime.datetime.utcnow()
+    )
+    db.add(mat)
+    db.flush()
+
+    # Notify students in department
+    students = db.query(models.Student).filter(models.Student.department_id == (mat.department_id or faculty.department_id)).all()
+    for s in students:
+        db.add(models.Notification(
+            user_id=s.user_id,
+            title=f"New Study Material: {mat.title}",
+            message=f"{faculty.name} uploaded {mat.title} for your course.",
+            type="Study Material",
+            link_url="/student/materials",
+            is_read=False,
+            created_at=datetime.datetime.utcnow()
+        ))
+
+    db.commit()
+    return {"status": "success", "message": "Study material uploaded successfully", "id": mat.id}
+
+@router.delete("/study-materials/{material_id}")
+def delete_study_material(
+    material_id: int,
+    faculty: models.Faculty = Depends(get_logged_in_faculty),
+    db: Session = Depends(get_db)
+):
+    mat = db.query(models.StudyMaterial).filter(
+        models.StudyMaterial.id == material_id,
+        models.StudyMaterial.faculty_id == faculty.id
+    ).first()
+    if not mat:
+        raise HTTPException(status_code=404, detail="Material not found or unauthorized")
+
+    db.delete(mat)
+    db.commit()
+    return {"status": "success", "message": "Study material deleted successfully"}
 

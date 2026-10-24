@@ -188,7 +188,7 @@ export default function FacultyMarks() {
                         type="button"
                         disabled={savingIndex === idx}
                         onClick={() => saveRowMarks(idx)}
-                        className="inline-flex items-center space-x-1 px-3 py-1 rounded bg-blue-700 text-white font-semibold text-xs hover:bg-blue-800 transition-colors disabled:opacity-50"
+                        className="inline-flex items-center space-x-1 px-3 py-1 rounded bg-blue-600 text-white font-semibold text-xs hover:bg-blue-700 transition-colors disabled:opacity-50"
                       >
                         <Save className="w-3 h-3" />
                         <span>{savingIndex === idx ? 'Saving...' : 'Save'}</span>

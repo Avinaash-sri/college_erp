@@ -195,7 +195,7 @@ export default function AdminSettings() {
           </div>
           <div className="p-3 rounded-lg border border-slate-100 bg-slate-50/50">
             <span className="text-[11px] font-semibold text-slate-400 block">Execution Mode</span>
-            <span className="font-bold text-indigo-700 mt-0.5 block">
+            <span className="font-bold text-blue-700 mt-0.5 block">
               {settingsData?.SMTP_HOST?.includes('Not Configured') ? 'Safe Demo Simulation (Full HTML Previews)' : 'Live SMTP Active'}
             </span>
           </div>
@@ -205,7 +205,7 @@ export default function AdminSettings() {
       {/* Interactive SMTP Gateway Test */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
         <div className="flex items-center space-x-2.5 border-b border-slate-100 pb-3 mb-4">
-          <Send className="w-5 h-5 text-indigo-600" />
+          <Send className="w-5 h-5 text-blue-600" />
           <h2 className="text-sm font-bold text-slate-900">Test SMTP Gateway Dispatch</h2>
         </div>
 
@@ -225,7 +225,7 @@ export default function AdminSettings() {
             <button
               type="submit"
               disabled={testingSMTP}
-              className="inline-flex items-center justify-center space-x-2 px-5 py-2 rounded-lg bg-indigo-700 text-white font-semibold text-xs hover:bg-indigo-800 transition-colors shadow-2xs disabled:opacity-50"
+              className="inline-flex items-center justify-center space-x-2 px-5 py-2 rounded-lg bg-blue-700 text-white font-semibold text-xs hover:bg-blue-800 transition-colors shadow-2xs disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{testingSMTP ? 'Testing Connection...' : 'Send Test Mail'}</span>

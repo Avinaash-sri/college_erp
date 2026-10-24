@@ -225,7 +225,7 @@ export default function LoginPage() {
         email: 'admin@college.edu',
         password: 'password123',
         badge: 'Full Executive Access',
-        badgeClass: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+        badgeClass: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
         note: 'Attendance Alert Center, SMTP Config & Analytics'
       }
     ]
@@ -237,7 +237,7 @@ export default function LoginPage() {
       {/* Top University Branding Bar */}
       <header className="max-w-6xl mx-auto w-full mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
         <div className="flex items-center space-x-3.5">
-          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/30 border border-blue-400/20">
+          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-blue-700 to-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/30 border border-blue-400/20">
             <GraduationCap className="h-7 w-7" />
           </div>
           <div>
@@ -310,7 +310,7 @@ export default function LoginPage() {
               </div>
 
               <div className="flex items-start space-x-3 text-xs">
-                <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center shrink-0 mt-0.5">
                   <Bot className="w-3.5 h-3.5" />
                 </div>
                 <div>
@@ -532,7 +532,7 @@ export default function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full flex items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-700 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-700/20 hover:from-blue-800 hover:to-indigo-800 transition-all duration-200 disabled:opacity-50 cursor-pointer active:scale-[0.99]"
+                  className="w-full flex items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-blue-700 to-blue-700 px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-700/20 hover:from-blue-800 hover:to-blue-800 transition-all duration-200 disabled:opacity-50 cursor-pointer active:scale-[0.99]"
                 >
                   <LogIn className="w-4 h-4" />
                   <span>{loading ? 'Authenticating Your Credentials...' : 'Sign In to Portal'}</span>

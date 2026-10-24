@@ -3,12 +3,13 @@ import client from '../../api/client';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import StatusBadge from '../../components/common/StatusBadge';
 import Modal from '../../components/common/Modal';
-import { Users, Plus, Edit2, Trash2, Eye, Search, AlertCircle } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Eye, Search, AlertCircle, GraduationCap } from 'lucide-react';
 
 export default function AdminStudents() {
   const [students, setStudents] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [recalculating, setRecalculating] = useState(false);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState(null);
@@ -100,6 +101,19 @@ export default function AdminStudents() {
     }
   };
 
+  const handleRecalculateCGPA = async () => {
+    setRecalculating(true);
+    try {
+      const res = await client.post('/admin/recalculate-cgpa');
+      alert(res.data?.message || 'Academic CGPA evaluated & saved to database for all students!');
+      fetchStudentsAndDepts();
+    } catch (e) {
+      alert('Failed to recalculate CGPA');
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
   const handleSaveStudent = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -136,14 +150,27 @@ export default function AdminStudents() {
           <p className="text-xs text-slate-500 mt-0.5">Enroll new students, configure registered parent alerts, and manage academic records</p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleOpenAdd}
-          className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-blue-700 text-white font-semibold text-xs hover:bg-blue-800 transition-colors shadow-2xs self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Enroll New Student</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            type="button"
+            onClick={handleRecalculateCGPA}
+            disabled={recalculating}
+            className="inline-flex items-center space-x-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-semibold text-xs hover:bg-blue-100 transition-colors shadow-2xs cursor-pointer"
+            title="Recalculate & store CGPA = sum(GP * Credits) / sum(Credits) in DB"
+          >
+            <GraduationCap className="w-4 h-4 text-blue-600" />
+            <span>{recalculating ? 'Evaluating...' : 'Recalculate CGPA (All)'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleOpenAdd}
+            className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-blue-700 text-white font-semibold text-xs hover:bg-blue-800 transition-colors shadow-2xs cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Enroll New Student</span>
+          </button>
+        </div>
       </div>
 
       {/* Table Container */}
@@ -172,6 +199,7 @@ export default function AdminStudents() {
                 <th className="py-3 px-3">Department &amp; Sem</th>
                 <th className="py-3 px-3 text-center">Attendance %</th>
                 <th className="py-3 px-3 text-center">Risk Status</th>
+                <th className="py-3 px-3 text-center">CGPA</th>
                 <th className="py-3 px-3">Registered Parent Info</th>
                 <th className="py-3 px-3 text-center">Actions</th>
               </tr>
@@ -192,6 +220,11 @@ export default function AdminStudents() {
                   </td>
                   <td className="py-3.5 px-3 text-center">
                     <StatusBadge status={st.risk_level} />
+                  </td>
+                  <td className="py-3.5 px-3 text-center">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded font-mono font-bold text-xs bg-blue-50 text-blue-700 border border-blue-200/80">
+                      {st.cgpa ? parseFloat(st.cgpa).toFixed(2) : '--'}
+                    </span>
                   </td>
                   <td className="py-3.5 px-3">
                     <div className="text-xs font-semibold text-slate-800">{st.parent_name}</div>

@@ -9,6 +9,7 @@ from app.database import engine, Base, SessionLocal, get_db
 from app.seed_data import seed_database
 from app.migrate_db import apply_database_migrations
 from app.assignment_scheduler import start_assignment_scheduler, stop_assignment_scheduler
+from app.attendance_scheduler import start_attendance_scheduler, stop_attendance_scheduler
 from app.routers import auth, students, faculty, admin, chat, quizzes, assignments, announcements, notes_ai, direct_api
 
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +33,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start assignment reminder scheduler: {e}")
 
+    # Start automated attendance alert scheduler (fires daily at 11 PM)
+    try:
+        start_attendance_scheduler()
+        logger.info("Attendance auto-alert scheduler started (fires daily at 23:00).")
+    except Exception as e:
+        logger.error(f"Failed to start attendance alert scheduler: {e}")
+
     # Only seed demo data if explicitly requested via SEED_DEMO_DATA=True in development
     if settings.SEED_DEMO_DATA or (settings.ENVIRONMENT.lower() == "development" and not settings.DATABASE_URL):
         logger.info("Development mode detected: Verifying initial demo seed data...")
@@ -53,6 +61,10 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down...")
     try:
         stop_assignment_scheduler()
+    except Exception:
+        pass
+    try:
+        stop_attendance_scheduler()
     except Exception:
         pass
 

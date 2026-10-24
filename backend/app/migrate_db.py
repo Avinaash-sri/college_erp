@@ -61,7 +61,41 @@ def apply_database_migrations(engine_instance=None):
                 except Exception as e:
                     logger.warning(f"Could not add notifications.{col_name}: {e}")
 
+        # Check students columns (cgpa)
+        existing_student_cols = [c["name"] for c in inspector.get_columns("students")]
+        if "cgpa" not in existing_student_cols:
+            try:
+                conn.execute(text("ALTER TABLE students ADD COLUMN cgpa FLOAT DEFAULT 0.0"))
+                conn.commit()
+                logger.info("Added column students.cgpa")
+            except Exception as e:
+                logger.warning(f"Could not add students.cgpa: {e}")
+
+        # Check marks columns (grade_point)
+        existing_mark_cols = [c["name"] for c in inspector.get_columns("marks")]
+        if "grade_point" not in existing_mark_cols:
+            try:
+                conn.execute(text("ALTER TABLE marks ADD COLUMN grade_point FLOAT DEFAULT 0.0"))
+                conn.commit()
+                logger.info("Added column marks.grade_point")
+            except Exception as e:
+                logger.warning(f"Could not add marks.grade_point: {e}")
+
+    # 3. Calculate and store initial CGPA for all students in DB
+    try:
+        from app.database import SessionLocal
+        from app.cgpa_calculator import calculate_all_students_cgpa
+        session = SessionLocal()
+        try:
+            calculate_all_students_cgpa(session)
+            logger.info("Academic CGPA calculation completed for all students in database.")
+        finally:
+            session.close()
+    except Exception as e:
+        logger.warning(f"Initial CGPA calculation skipped: {e}")
+
     logger.info("Database migrations applied successfully.")
 
 if __name__ == "__main__":
     apply_database_migrations()
+

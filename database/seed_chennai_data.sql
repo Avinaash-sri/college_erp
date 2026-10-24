@@ -6152,24 +6152,3 @@ FROM users u WHERE u.role = 'student';
 INSERT INTO notifications (user_id, title, message, type, is_read)
 SELECT u.id, 'Assignment Due Reminder', 'Full-Stack React + Supabase Cloud Mini-Project is due in 5 days.', 'assignment', false
 FROM users u WHERE u.role = 'student';
-
--- 10. MARKS SEED DATA (Internal Assessment CIA-1, CIA-2, Assignment)
-INSERT INTO public.marks (student_id, subject_id, exam_type, marks_obtained, max_marks, grade, remarks)
-SELECT s.id, sub.id, 'CIA Continuous Assessment', 
-       CASE 
-         WHEN s.overall_attendance >= 85 THEN 52.5 + (s.id % 6)
-         WHEN s.overall_attendance >= 75 THEN 44.0 + (s.id % 5)
-         ELSE 32.0 + (s.id % 4)
-       END,
-       60.0,
-       CASE 
-         WHEN s.overall_attendance >= 85 THEN 'A+'
-         WHEN s.overall_attendance >= 75 THEN 'A'
-         ELSE 'C'
-       END,
-       'Verified Continuous Assessment'
-FROM public.students s
-CROSS JOIN public.subjects sub
-WHERE sub.department_id = s.department_id
-ON CONFLICT DO NOTHING;
-

@@ -79,7 +79,7 @@ export default function StatusBadge({ status, type = 'attendance' }) {
   }
   if (s === 'SIMULATED') {
     return (
-      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
         Simulated (Demo Mode)
       </span>
     );

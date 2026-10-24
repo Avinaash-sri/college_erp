@@ -331,7 +331,7 @@ export default function AIAssistant() {
             onClick={() => setActiveTab('erp')}
             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
               activeTab === 'erp'
-                ? 'bg-white text-indigo-700 shadow-xs'
+                ? 'bg-white text-blue-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -444,13 +444,13 @@ export default function AIAssistant() {
                 <button
                   onClick={() => handlePerformAction('explain_tanglish')}
                   disabled={notesActionLoading}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-purple-400 hover:bg-purple-50/50 text-[11px] font-medium text-purple-900 transition-colors flex items-center justify-between"
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-[11px] font-medium text-blue-900 transition-colors flex items-center justify-between"
                 >
                   <span className="flex items-center space-x-1.5">
-                    <Languages className="w-3.5 h-3.5 text-purple-600" />
+                    <Languages className="w-3.5 h-3.5 text-blue-600" />
                     <span>Explain in Tanglish</span>
                   </span>
-                  <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded font-bold">New</span>
+                  <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-bold">New</span>
                 </button>
 
                 <button
@@ -656,7 +656,7 @@ export default function AIAssistant() {
       {activeTab === 'erp' && (
         <div className="flex-1 flex flex-col border-x border-b border-slate-200 bg-white rounded-b-xl overflow-hidden">
           {/* Header Bar */}
-          <div className="p-3 border-b border-slate-200 bg-indigo-50/40 flex items-center justify-between">
+          <div className="p-3 border-b border-slate-200 bg-blue-50/40 flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <span className="text-xs font-semibold text-slate-900">ERP Context:</span>
               <span className="text-[11px] text-slate-500">
@@ -680,7 +680,7 @@ export default function AIAssistant() {
               return (
                 <div key={idx} className={`flex items-start space-x-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
                   {!isUser && (
-                    <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 mt-1 shadow-2xs">
+                    <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 mt-1 shadow-2xs">
                       <Bot className="w-4 h-4" />
                     </div>
                   )}
@@ -703,7 +703,7 @@ export default function AIAssistant() {
                           <div className="mt-3 pt-3 border-t border-slate-200/60">
                             <div className="flex items-center justify-between mb-1.5">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1">
-                                <Sparkles className="w-3 h-3 text-indigo-500" />
+                                <Sparkles className="w-3 h-3 text-blue-500" />
                                 <span>Suggested Inquiries</span>
                               </span>
                               {msg.engine && (
@@ -717,7 +717,7 @@ export default function AIAssistant() {
                                 <button
                                   key={qIdx}
                                   onClick={() => handleSendErpMessage(q)}
-                                  className="text-[11px] font-medium bg-white text-slate-700 border border-slate-200 hover:border-indigo-400 hover:text-indigo-700 hover:bg-indigo-50/50 px-2.5 py-1 rounded-full transition-all text-left"
+                                  className="text-[11px] font-medium bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50/50 px-2.5 py-1 rounded-full transition-all text-left"
                                 >
                                   {q}
                                 </button>
@@ -740,14 +740,14 @@ export default function AIAssistant() {
 
             {erpLoading && (
               <div className="flex items-center space-x-3">
-                <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0">
                   <Bot className="w-4 h-4" />
                 </div>
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-none p-3 text-xs text-slate-500 flex items-center space-x-2">
                   <div className="flex space-x-1">
-                    <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce"></div>
-                    <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce [animation-delay:0.2s]"></div>
-                    <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce"></div>
+                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.4s]"></div>
                   </div>
                   <span>Querying college ERP database...</span>
                 </div>

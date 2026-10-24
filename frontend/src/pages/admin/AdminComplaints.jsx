@@ -147,7 +147,7 @@ export default function AdminComplaints() {
                     <td className="py-3.5 px-3">
                       <div className="font-bold text-slate-900">{c.student_name}</div>
                       <div className="text-[11px] text-slate-400 font-mono">
-                        {c.student_reg_no} &bull; {c.department_name}
+                        {c.student_reg_no} &bull; {c.department_name || c.department || 'Computer Science and Engineering'}
                       </div>
                     </td>
                     <td className="py-3.5 px-3">

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import client from '../api/client';
+import client, { syncWithSupabase } from '../api/client';
 import { supabase, isSupabaseConfigured, signOut } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -21,8 +21,9 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    // 2. If Supabase configured, subscribe to auth state changes
+    // 2. If Supabase configured, subscribe to auth state changes and sync database
     if (isSupabaseConfigured) {
+      syncWithSupabase().catch(console.warn);
       const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (session?.user) {
           const role = session.user.user_metadata?.role || 'student';

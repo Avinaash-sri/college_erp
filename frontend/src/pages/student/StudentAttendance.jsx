@@ -156,7 +156,7 @@ export default function StudentAttendance() {
                       ? 'bg-emerald-500'
                       : overallPercentage >= 65
                       ? 'bg-amber-500'
-                      : 'bg-rose-500'
+                      : 'bg-rose-600/90'
                   }`}
                   style={{ width: `${Math.min(100, overallPercentage)}%` }}
                 />
@@ -171,16 +171,16 @@ export default function StudentAttendance() {
 
           {/* Recovery Prediction Callout */}
           {isBelow75 ? (
-            <div className="md:w-80 rounded-lg border border-rose-200 bg-rose-50/70 p-4">
-              <div className="flex items-center space-x-2 text-rose-800 font-bold text-xs uppercase tracking-wide">
+            <div className="md:w-80 rounded-xl border border-rose-200/60 bg-gradient-to-br from-rose-50/30 to-slate-50/80 p-4.5 shadow-2xs">
+              <div className="flex items-center space-x-2 text-rose-900 font-bold text-xs uppercase tracking-wide">
                 <AlertTriangle className="w-4 h-4 text-rose-600" />
-                <span>Attendance Recovery Action</span>
+                <span>Attendance Recovery Plan</span>
               </div>
-              <p className="text-xs text-rose-700 mt-1.5 font-medium leading-relaxed">
-                Attend <span className="font-bold text-rose-900 text-sm">{recoveryClasses}</span> more consecutive classes without missing any to reach the required 75%.
+              <p className="text-xs text-slate-700 mt-2 font-medium leading-relaxed">
+                Attend <span className="font-bold text-rose-800 text-sm bg-rose-100/70 px-1.5 py-0.5 rounded">{recoveryClasses}</span> more consecutive classes without absence to achieve 75% university eligibility.
               </p>
-              <p className="text-[11px] text-rose-500 mt-2 italic">
-                Formula: (attended + x) / (total + x) &ge; 0.75
+              <p className="text-[11px] text-slate-400 mt-2">
+                Mandatory university compliance: &ge; 75.0%
               </p>
             </div>
           ) : (
@@ -331,10 +331,10 @@ export default function StudentAttendance() {
               return (
                 <div
                   key={period.id}
-                  className={`p-4 rounded-2xl border transition-all duration-200 flex flex-col justify-between ${
+                  className={`p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between ${
                     isPresent
-                      ? 'bg-white border-slate-200 hover:border-blue-300 shadow-2xs'
-                      : 'bg-rose-50/50 border-rose-300 shadow-xs ring-1 ring-rose-200'
+                      ? 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+                      : 'bg-white border-rose-200/80 hover:border-rose-300 shadow-2xs'
                   }`}
                 >
                   <div>
@@ -350,12 +350,12 @@ export default function StudentAttendance() {
                       </div>
 
                       {isPresent ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center space-x-1">
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1">
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                           <span>Present</span>
                         </span>
                       ) : (
-                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center space-x-1">
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 flex items-center space-x-1">
                           <XCircle className="w-3 h-3 text-rose-600" />
                           <span>Absent</span>
                         </span>

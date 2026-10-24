@@ -86,6 +86,7 @@ class StudentResponse(StudentBase):
     overall_attendance: Optional[float] = 0.0
     risk_level: Optional[str] = "SAFE"
     recovery_classes: Optional[int] = 0
+    cgpa: Optional[float] = 0.0
     class Config:
         from_attributes = True
 
@@ -207,6 +208,7 @@ class MarkBase(BaseModel):
     assignment: float = 0.0
     total: float = 0.0
     grade: str = "A"
+    grade_point: Optional[float] = 0.0
 
 class MarkCreate(MarkBase):
     pass
@@ -217,6 +219,7 @@ class MarkResponse(MarkBase):
     reg_no: Optional[str] = None
     subject_name: Optional[str] = None
     subject_code: Optional[str] = None
+    credits: Optional[float] = 3.0
     class Config:
         from_attributes = True
 
@@ -665,3 +668,84 @@ class ChatResponse(BaseModel):
 
 class TestSMTPRequest(BaseModel):
     to_email: Optional[str] = None
+
+# Leave Requests
+class LeaveRequestCreate(BaseModel):
+    leave_type: str
+    from_date: str
+    to_date: str
+    reason: str
+
+class LeaveRequestUpdate(BaseModel):
+    status: str
+    faculty_remark: Optional[str] = None
+    admin_remark: Optional[str] = None
+
+class LeaveRequestResponse(BaseModel):
+    id: int
+    student_id: int
+    student_name: Optional[str] = None
+    reg_no: Optional[str] = None
+    department_name: Optional[str] = None
+    leave_type: str
+    from_date: str
+    to_date: str
+    reason: str
+    status: str
+    faculty_remark: Optional[str] = None
+    admin_remark: Optional[str] = None
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+# Study Materials
+class StudyMaterialCreate(BaseModel):
+    title: str
+    subject_id: Optional[int] = None
+    department_id: Optional[int] = None
+    semester: Optional[int] = 6
+    description: Optional[str] = None
+    file_type: Optional[str] = "pdf"
+    file_url: Optional[str] = None
+    file_size: Optional[str] = "1.5 MB"
+
+class StudyMaterialResponse(BaseModel):
+    id: int
+    faculty_id: int
+    faculty_name: Optional[str] = None
+    subject_id: Optional[int] = None
+    subject_name: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    file_type: str
+    file_url: Optional[str] = None
+    file_size: str
+    downloads: int = 0
+    uploaded_at: Optional[str] = None
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+# Document Requests
+class DocumentRequestCreate(BaseModel):
+    doc_type: str
+    description: str
+
+class DocumentRequestUpdate(BaseModel):
+    status: str
+    admin_reply: Optional[str] = None
+
+class DocumentRequestResponse(BaseModel):
+    id: int
+    student_id: int
+    student_name: Optional[str] = None
+    reg_no: Optional[str] = None
+    department: Optional[str] = None
+    doc_type: str
+    description: str
+    status: str
+    admin_reply: Optional[str] = None
+    submitted_at: Optional[str] = None
+    created_at: datetime
+    class Config:
+        from_attributes = True

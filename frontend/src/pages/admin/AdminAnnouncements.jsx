@@ -14,8 +14,12 @@ import {
   Filter,
   CheckCircle2,
   Sparkles,
-  Archive
+  Archive,
+  UploadCloud,
+  Image,
+  X
 } from 'lucide-react';
+
 
 export default function AdminAnnouncements() {
   const [announcements, setAnnouncements] = useState([]);
@@ -34,6 +38,7 @@ export default function AdminAnnouncements() {
     description: '',
     category: 'General Announcement',
     poster_url: '',
+    file_data: '',
     event_date: '',
     registration_url: '',
     audience_type: 'all', // 'all', 'department', 'semester', 'section'
@@ -42,6 +47,49 @@ export default function AdminAnnouncements() {
     target_section: 'All',
     status: 'published'
   });
+
+  const [filePreview, setFilePreview] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [fileLoading, setFileLoading] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      alert('File size exceeds 8MB limit. Please choose a smaller image.');
+      return;
+    }
+    setFileLoading(true);
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      setFilePreview(result);
+      setFormData((prev) => ({
+        ...prev,
+        poster_url: result,
+        file_data: result
+      }));
+      setFileLoading(false);
+    };
+    reader.onerror = () => {
+      alert('Failed to read image file.');
+      setFileLoading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveFile = () => {
+    setFilePreview(null);
+    setFileName('');
+    setFormData((prev) => ({
+      ...prev,
+      poster_url: '',
+      file_data: ''
+    }));
+  };
+
 
   const categories = [
     'General Announcement',
@@ -244,15 +292,16 @@ export default function AdminAnnouncements() {
               </div>
 
               {/* Poster thumbnail if present */}
-              {a.poster_url && (
+              {(a.poster_url || a.file_data) && (
                 <div className="w-full md:w-44 flex-shrink-0">
                   <img
-                    src={a.poster_url}
+                    src={a.poster_url || a.file_data}
                     alt={a.title}
                     className="w-full h-28 object-cover rounded-lg border border-slate-200"
                   />
                 </div>
               )}
+
 
               <div className="flex items-center space-x-2 self-start">
                 {a.status === 'published' && (
@@ -421,17 +470,91 @@ export default function AdminAnnouncements() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
-              Optional Poster Image URL
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1">
+              Upload Announcement Poster / Circular Image *
             </label>
-            <input
-              type="url"
-              value={formData.poster_url}
-              onChange={(e) => setFormData({ ...formData, poster_url: e.target.value })}
-              placeholder="https://images.unsplash.com/..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600 bg-white"
-            />
+            <p className="text-[11px] text-slate-400 mb-2">
+              Upload an event flyer, circular image, or banner from your system. Students and staff will see this image in their notifications and announcements feed.
+            </p>
+
+            {filePreview || formData.poster_url ? (
+              <div className="relative rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={filePreview || formData.poster_url}
+                    alt="Poster Preview"
+                    className="w-20 h-20 object-cover rounded-lg border border-slate-200 bg-white"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">
+                      {fileName || 'Uploaded Announcement Poster'}
+                    </p>
+                    <p className="text-[11px] text-emerald-600 font-semibold mt-0.5 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Ready for broadcast
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleRemoveFile}
+                      className="mt-2 text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" /> Remove image
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-xl p-4 transition-colors text-center bg-slate-50/50">
+                <input
+                  type="file"
+                  id="announcement-poster-file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="announcement-poster-file"
+                  className="cursor-pointer flex flex-col items-center justify-center space-y-1.5"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <UploadCloud className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-blue-600 hover:text-blue-700">
+                      Click to choose image file
+                    </span>
+                    <span className="text-xs text-slate-500"> or drag and drop</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">PNG, JPG, JPEG, WEBP up to 8MB</p>
+                </label>
+              </div>
+            )}
+
+            <div className="mt-2 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowUrlInput(!showUrlInput)}
+                className="text-[11px] text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
+              >
+                {showUrlInput ? 'Hide manual image URL' : 'Or paste image URL instead'}
+              </button>
+            </div>
+
+            {showUrlInput && (
+              <div className="mt-2">
+                <input
+                  type="url"
+                  value={formData.poster_url}
+                  onChange={(e) => {
+                    setFormData({ ...formData, poster_url: e.target.value });
+                    setFilePreview(e.target.value);
+                  }}
+                  placeholder="https://images.unsplash.com/..."
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600 bg-white"
+                />
+              </div>
+            )}
           </div>
+
 
           <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200">
             <button

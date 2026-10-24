@@ -2075,47 +2075,31 @@ export const MARKS = (function generateMarks() {
 
   STUDENTS.forEach((student) => {
     const deptSubjects = SUBJECTS.filter((s) => s.department_id === student.department_id);
+    const base = student.overall_attendance >= 85 ? 88.0 : (student.overall_attendance >= 72 ? 76.0 : 58.0);
 
     deptSubjects.forEach((sub, subIdx) => {
-      // Create a realistic variation per student and subject
-      const hash = (student.id * 7 + sub.id * 13) % 100;
-      let internal_1;
-      let internal_2;
-      let assignment;
-      let status = 'Published';
+      const off = subIdx === 0
+        ? (((student.id * 7 + student.department_id * 3) % 11) - 4)
+        : (subIdx === 1
+          ? (((student.id * 11 + student.department_id * 5) % 9) - 3)
+          : (((student.id * 13 + student.department_id * 7) % 11) - 5));
 
-      // Example of an unassessed/absent course mark to test "Not available" cleanly
-      if (student.id === 55 && subIdx === 2) {
-        internal_1 = null;
-        internal_2 = null;
-        assignment = null;
-        status = 'Draft';
-      } else if (student.overall_attendance >= 85) {
-        internal_1 = +(21 + (hash % 4.5)).toFixed(1);
-        internal_2 = +(22 + ((hash + 3) % 3.5)).toFixed(1);
-        assignment = +(9.0 + (hash % 1.1)).toFixed(1);
-      } else if (student.overall_attendance >= 75) {
-        internal_1 = +(17 + (hash % 4.5)).toFixed(1);
-        internal_2 = +(18 + ((hash + 2) % 4.0)).toFixed(1);
-        assignment = +(8.0 + (hash % 1.5)).toFixed(1);
-      } else {
-        internal_1 = +(12 + (hash % 4.0)).toFixed(1);
-        internal_2 = +(13 + ((hash + 1) % 3.5)).toFixed(1);
-        assignment = +(6.5 + (hash % 1.5)).toFixed(1);
-      }
+      const score = Math.max(42.0, Math.min(98.0, +(base + off).toFixed(1)));
+      let grade = 'B';
+      let grade_point = 6.0;
 
-      let total = null;
-      let grade = null;
+      if (score >= 91) { grade = 'O'; grade_point = 10.0; }
+      else if (score >= 81) { grade = 'A+'; grade_point = 9.0; }
+      else if (score >= 71) { grade = 'A'; grade_point = 8.0; }
+      else if (score >= 61) { grade = 'B+'; grade_point = 7.0; }
+      else if (score >= 50) { grade = 'B'; grade_point = 6.0; }
+      else if (score >= 40) { grade = 'C'; grade_point = 5.0; }
+      else { grade = 'F'; grade_point = 0.0; }
 
-      if (internal_1 !== null && internal_2 !== null && assignment !== null) {
-        total = +(internal_1 + internal_2 + assignment).toFixed(1);
-        if (total >= 54) grade = 'A+';
-        else if (total >= 48) grade = 'A';
-        else if (total >= 42) grade = 'B+';
-        else if (total >= 36) grade = 'B';
-        else if (total >= 30) grade = 'C';
-        else grade = 'F';
-      }
+      const internal_1 = +(score * 0.25).toFixed(1);
+      const internal_2 = +(score * 0.25).toFixed(1);
+      const assignment = +(score * 0.10).toFixed(1);
+      const credits = sub.credits || (subIdx === 2 ? 3 : 4);
 
       marksList.push({
         id: markId++,
@@ -2129,12 +2113,16 @@ export const MARKS = (function generateMarks() {
         subject_id: sub.id,
         subject_code: sub.code,
         subject_name: sub.name,
+        credits,
         internal_1,
         internal_2,
         assignment,
-        total,
+        marks_obtained: score,
+        max_marks: 100.0,
+        total: score,
         grade,
-        status
+        grade_point,
+        status: 'Published'
       });
     });
   });

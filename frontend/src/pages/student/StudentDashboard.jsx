@@ -13,7 +13,8 @@ import {
   Bell,
   AlertTriangle,
   ArrowRight,
-  Bot
+  Bot,
+  GraduationCap
 } from 'lucide-react';
 
 export default function StudentDashboard() {
@@ -79,13 +80,19 @@ export default function StudentDashboard() {
       )}
 
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           title="Overall Attendance"
           value={`${attendance.overall_percentage}%`}
           subtitle={`${attendance.total_attended} / ${attendance.total_conducted} classes attended`}
           icon={CalendarCheck}
           badge={<StatusBadge status={attendance.risk_status} />}
+        />
+        <StatCard
+          title="Cumulative CGPA"
+          value={`${student.cgpa ? parseFloat(student.cgpa).toFixed(2) : '--'}`}
+          subtitle="Stored in Academic DB"
+          icon={GraduationCap}
         />
         <StatCard
           title="Today's Classes"

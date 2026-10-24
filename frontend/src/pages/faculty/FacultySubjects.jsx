@@ -188,7 +188,7 @@ export default function FacultySubjects() {
               </Link>
               <Link
                 to="/faculty/quizzes"
-                className="inline-flex items-center space-x-1 text-xs font-semibold text-purple-700 hover:text-purple-800 bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-200 transition-colors"
+                className="inline-flex items-center space-x-1 text-xs font-semibold text-blue-700 hover:text-blue-800 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 transition-colors"
               >
                 <HelpCircle className="w-3.5 h-3.5" />
                 <span>Create Quiz</span>

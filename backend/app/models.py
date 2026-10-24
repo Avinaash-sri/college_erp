@@ -52,6 +52,7 @@ class Student(Base):
     parent_name = Column(String(100), nullable=False)
     parent_email = Column(String(120), nullable=False, index=True)
     address = Column(String(255), nullable=True)
+    cgpa = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # Relationships
@@ -70,6 +71,8 @@ class Student(Base):
     assignment_submissions = relationship("AssignmentSubmission", back_populates="student", cascade="all, delete-orphan")
     documents = relationship("StudentDocument", back_populates="student", cascade="all, delete-orphan")
     ai_conversations = relationship("StudentAIConversation", back_populates="student", cascade="all, delete-orphan")
+    leave_requests = relationship("LeaveRequest", back_populates="student", cascade="all, delete-orphan")
+    document_requests = relationship("DocumentRequest", back_populates="student", cascade="all, delete-orphan")
 
 
 class ParentContact(Base):
@@ -107,6 +110,7 @@ class Faculty(Base):
     timetable_entries = relationship("TimetableEntry", back_populates="faculty")
     assignments = relationship("Assignment", back_populates="faculty")
     quizzes = relationship("Quiz", back_populates="faculty")
+    study_materials = relationship("StudyMaterial", back_populates="faculty", cascade="all, delete-orphan")
 
 
 class Subject(Base):
@@ -131,6 +135,7 @@ class Subject(Base):
     enrollments = relationship("Enrollment", back_populates="subject")
     assignments = relationship("Assignment", back_populates="subject")
     quizzes = relationship("Quiz", back_populates="subject")
+    study_materials = relationship("StudyMaterial", back_populates="subject")
 
 
 class Enrollment(Base):
@@ -199,6 +204,7 @@ class Mark(Base):
     assignment = Column(Float, default=0.0)
     total = Column(Float, default=0.0)
     grade = Column(String(10), default="A")
+    grade_point = Column(Float, default=0.0)
 
     student = relationship("Student", back_populates="marks")
     subject = relationship("Subject", back_populates="marks")
@@ -599,3 +605,58 @@ class SystemSetting(Base):
     key = Column(String(50), unique=True, index=True, nullable=False)
     value = Column(String(255), nullable=False)
     description = Column(String(255), nullable=True)
+
+
+class LeaveRequest(Base):
+    __tablename__ = "leave_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    leave_type = Column(String(50), nullable=False)  # 'Medical Leave', 'Personal Leave', 'Family Emergency', 'Event Participation', 'Other'
+    from_date = Column(String(20), nullable=False)
+    to_date = Column(String(20), nullable=False)
+    reason = Column(Text, nullable=False)
+    status = Column(String(20), default="Pending")  # 'Pending', 'Approved', 'Rejected'
+    faculty_remark = Column(Text, nullable=True)
+    admin_remark = Column(Text, nullable=True)
+    reviewed_by = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    student = relationship("Student", back_populates="leave_requests")
+
+
+class StudyMaterial(Base):
+    __tablename__ = "study_materials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    faculty_id = Column(Integer, ForeignKey("faculty.id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True)
+    department_id = Column(Integer, ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True)
+    semester = Column(Integer, default=6)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    file_type = Column(String(20), default="pdf")
+    file_url = Column(String(500), nullable=True)
+    file_size = Column(String(50), default="1.5 MB")
+    downloads = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    faculty = relationship("Faculty", back_populates="study_materials")
+    subject = relationship("Subject", back_populates="study_materials")
+
+
+class DocumentRequest(Base):
+    __tablename__ = "document_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id", ondelete="CASCADE"), nullable=False, index=True)
+    doc_type = Column(String(100), nullable=False)  # 'Bonafide Certificate', 'Transfer Certificate Request', etc.
+    description = Column(Text, nullable=False)
+    status = Column(String(20), default="Pending")  # 'Pending', 'Approved', 'Rejected'
+    admin_reply = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    student = relationship("Student", back_populates="document_requests")

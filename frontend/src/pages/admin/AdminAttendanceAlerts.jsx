@@ -24,6 +24,8 @@ export default function AdminAttendanceAlerts() {
   const [retryingId, setRetryingId] = useState(null);
   const [retryingAll, setRetryingAll] = useState(false);
   const [actionFeedback, setActionFeedback] = useState(null);
+  const [schedulerStatus, setSchedulerStatus] = useState(null);
+  const [triggeringAutoScan, setTriggeringAutoScan] = useState(false);
 
   const fetchAlertCenterData = () => {
     client.get('/admin/attendance-alerts')
@@ -32,8 +34,15 @@ export default function AdminAttendanceAlerts() {
       .finally(() => setLoading(false));
   };
 
+  const fetchSchedulerStatus = () => {
+    client.get('/admin/attendance-alerts/scheduler-status')
+      .then((res) => setSchedulerStatus(res.data))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     fetchAlertCenterData();
+    fetchSchedulerStatus();
   }, []);
 
   const handleRetrySingle = async (logId) => {
@@ -96,6 +105,27 @@ export default function AdminAttendanceAlerts() {
       });
     } finally {
       setDispatchingAll(false);
+    }
+  };
+
+  const handleTriggerAutoScan = async () => {
+    setTriggeringAutoScan(true);
+    setActionFeedback(null);
+    try {
+      const res = await client.post('/admin/attendance-alerts/trigger-auto-scan');
+      setActionFeedback({
+        type: 'success',
+        message: res.data.message || 'Auto-scan completed successfully.'
+      });
+      fetchAlertCenterData();
+      fetchSchedulerStatus();
+    } catch (err) {
+      setActionFeedback({
+        type: 'error',
+        message: err.response?.data?.detail || 'Auto-scan failed.'
+      });
+    } finally {
+      setTriggeringAutoScan(false);
     }
   };
 
@@ -169,8 +199,43 @@ export default function AdminAttendanceAlerts() {
       <div>
         <h1 className="text-xl font-bold text-slate-900">Attendance Alert Center</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Dedicated monitoring console for students below {safe_threshold}% &bull; Automated parent SMTP notification dispatch &amp; simulation
+          Dedicated monitoring console for students below {safe_threshold}% &bull; Automated parent SMTP notification dispatch
         </p>
+      </div>
+
+      {/* Auto-Scheduler Status Card */}
+      <div className="erp-card p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${schedulerStatus?.scheduler_active ? 'bg-emerald-100' : 'bg-slate-100'}`}>
+            <History className={`w-4 h-4 ${schedulerStatus?.scheduler_active ? 'text-emerald-600' : 'text-slate-400'}`} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold text-slate-800">Auto-Scheduler</p>
+              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${schedulerStatus?.scheduler_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${schedulerStatus?.scheduler_active ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                {schedulerStatus?.scheduler_active ? 'Active' : 'Loading...'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Fires daily at {schedulerStatus?.schedule_time || '23:00'} &bull; Term: {schedulerStatus?.current_term || '—'} &bull;{' '}
+              {schedulerStatus?.last_scan_at
+                ? `Last run: ${new Date(schedulerStatus.last_scan_at).toLocaleString()}`
+                : 'No scan run yet this session'}
+              {schedulerStatus && <> &bull; <span className="text-emerald-600 font-semibold">{schedulerStatus.total_alerts_sent} sent</span>, <span className="text-rose-500 font-semibold">{schedulerStatus.total_alerts_failed} failed</span></>}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={triggeringAutoScan}
+          onClick={handleTriggerAutoScan}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 flex-shrink-0"
+          title="Manually trigger the nightly attendance auto-scan right now"
+        >
+          <RotateCw className={`w-3.5 h-3.5 ${triggeringAutoScan ? 'animate-spin' : ''}`} />
+          {triggeringAutoScan ? 'Scanning...' : 'Run Auto-Scan Now'}
+        </button>
       </div>
 
       {/* SMTP Status Notice & Manual Controls */}
@@ -356,7 +421,7 @@ export default function AdminAttendanceAlerts() {
                 type="button"
                 disabled={retryingAll}
                 onClick={handleRetryAll}
-                className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 text-xs font-semibold transition-colors disabled:opacity-50"
+                className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition-colors disabled:opacity-50"
               >
                 <RotateCw className={`w-3.5 h-3.5 ${retryingAll ? 'animate-spin' : ''}`} />
                 <span>{retryingAll ? 'Retrying All...' : 'Retry All Failed'}</span>

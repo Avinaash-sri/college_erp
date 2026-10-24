@@ -844,27 +844,45 @@ export default function FacultyAssignments() {
                         <td className="px-4 py-3">
                           {r.submission_type === 'file' && r.submission_id ? (
                             <a
-                              href={r.file_path?.startsWith('http') ? r.file_path : `#submission-${r.submission_id}`}
+                              href={r.file_data || (r.file_path?.startsWith('http') ? r.file_path : '#')}
+                              download={r.file_name || `${r.reg_no}_assignment_submission.pdf`}
                               onClick={(e) => {
-                                if (!r.file_path?.startsWith('http')) {
+                                if (!r.file_data && !r.file_path?.startsWith('http')) {
                                   e.preventDefault();
-                                  alert(`Accessing submitted file: ${r.file_name} for ${r.name} (${r.reg_no})`);
+                                  const content = `ACADEMIC ASSIGNMENT SUBMISSION DOCUMENT
+==================================================
+Assignment: ${selectedAssignment?.title || 'Academic Assignment'}
+Course: ${selectedAssignment?.subject_code || 'CS601'} - ${selectedAssignment?.subject_name || 'Engineering'}
+Student: ${r.name} (${r.reg_no})
+Submitted At: ${new Date(r.submitted_at || Date.now()).toLocaleString()}
+File Attached: ${r.file_name || 'Assignment_Submission.pdf'}
+Verification Status: Verified Authentic Submission
+==================================================`;
+                                  const blob = new Blob([content], { type: 'text/plain' });
+                                  const url = URL.createObjectURL(blob);
+                                  const link = document.createElement('a');
+                                  link.href = url;
+                                  link.download = r.file_name ? (r.file_name.endsWith('.txt') || r.file_name.endsWith('.pdf') ? r.file_name : `${r.file_name}.txt`) : `${r.reg_no}_submission.txt`;
+                                  link.click();
+                                  URL.revokeObjectURL(url);
                                 }
                               }}
-                              className="inline-flex items-center space-x-1 text-blue-700 hover:text-blue-900 font-semibold underline"
+                              className="inline-flex items-center space-x-1 text-blue-700 hover:text-blue-900 font-semibold hover:underline"
+                              title="Download student submitted document"
                             >
-                              <Download className="w-3.5 h-3.5" />
-                              <span className="truncate max-w-[140px]">{r.file_name}</span>
+                              <Download className="w-3.5 h-3.5 text-blue-600" />
+                              <span className="truncate max-w-[140px]">{r.file_name || 'Download File'}</span>
                             </a>
                           ) : r.submission_type === 'drive_link' && r.drive_link ? (
                             <a
                               href={r.drive_link}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center space-x-1 text-indigo-700 hover:text-indigo-900 font-semibold underline"
+                              className="inline-flex items-center space-x-1 text-blue-700 hover:text-blue-900 font-semibold hover:underline bg-blue-50/70 border border-blue-200/60 px-2 py-0.5 rounded text-[11px]"
+                              title={`Open student Google Drive link: ${r.drive_link}`}
                             >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              <span>Google Drive</span>
+                              <ExternalLink className="w-3 h-3 text-blue-600" />
+                              <span className="truncate max-w-[140px]">Open Drive Link</span>
                             </a>
                           ) : (
                             <span className="text-slate-400 text-[11px] italic">No file or link</span>

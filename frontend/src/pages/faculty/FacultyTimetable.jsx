@@ -45,12 +45,12 @@ export default function FacultyTimetable() {
               onClick={() => setActiveDay(day)}
               className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
                 isActive
-                  ? 'bg-blue-700 text-white shadow-xs'
+                  ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
               }`}
             >
               {day}
-              <span className={`ml-2 text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+              <span className={`ml-2 text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-500'}`}>
                 {(timetable[day] || []).length}
               </span>
             </button>

@@ -293,7 +293,7 @@ export default function FacultyAttendance() {
             type="button"
             disabled={saving || students.length === 0}
             onClick={handleSaveAttendance}
-            className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 transition-colors shadow-xs disabled:opacity-50"
+            className="flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-xs disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             <span>{saving ? 'Saving Attendance & Recalculating...' : 'Save & Submit Attendance'}</span>

@@ -16,7 +16,8 @@ import {
   Share2,
   CheckSquare,
   Square,
-  Sparkles
+  Sparkles,
+  Send
 } from 'lucide-react';
 
 export default function FacultyQuizzes() {
@@ -81,55 +82,40 @@ export default function FacultyQuizzes() {
     }
   };
 
-  const fetchDropdownData = async () => {
+  const fetchSubjects = async () => {
     try {
-      const [subjRes, deptRes] = await Promise.all([
-        client.get('/faculty/dashboard'),
-        client.get('/faculty/me')
-      ]);
-      if (subjRes.data?.faculty?.department) {
-        // Find faculty department
-      }
-      // Get all subjects
-      const meRes = await client.get('/faculty/me');
-      if (meRes.data?.department_id) {
-        setFormData((prev) => ({ ...prev, department_id: meRes.data.department_id }));
-      }
-      // Subjects
-      const subjectsList = await client.get('/faculty/dashboard');
-      // Set subjects from classes or default
+      const res = await client.get('/faculty/subjects');
+      setSubjects(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
-      console.error(e);
+      console.error('Error fetching faculty subjects:', e);
     }
   };
 
   useEffect(() => {
     fetchQuizzes();
-    // Load subjects for faculty
-    client.get('/faculty/dashboard')
-      .then((res) => {
-        // faculty classes provide subjects
-      })
-      .catch((e) => console.error(e));
+    fetchSubjects();
   }, []);
 
   // Whenever department_id, semester, or section changes, automatically fetch eligible students from DB!
   useEffect(() => {
-    if (formData.department_id && createModalOpen) {
+    if (createModalOpen) {
       setFetchingStudents(true);
       client.get('/faculty/students-by-filter', {
         params: {
-          department_id: formData.department_id,
-          semester: formData.semester,
-          section: formData.section
+          department_id: formData.department_id || 1,
+          semester: formData.semester || 6,
+          section: formData.section || 'All'
         }
       })
         .then((res) => {
-          setEligibleStudents(res.data);
+          setEligibleStudents(res.data || []);
           // By default, everyone is included (no exclusions)
           setFormData((prev) => ({ ...prev, excluded_student_ids: [] }));
         })
-        .catch((e) => console.error(e))
+        .catch((e) => {
+          console.error(e);
+          setEligibleStudents([]);
+        })
         .finally(() => setFetchingStudents(false));
     }
   }, [formData.department_id, formData.semester, formData.section, createModalOpen]);
@@ -141,13 +127,15 @@ export default function FacultyQuizzes() {
     const deadlineStr = d.toISOString().slice(0, 16);
 
     client.get('/faculty/me').then((res) => {
+      const deptId = res.data.department_id || 1;
+      const defaultSub = subjects[0]?.id ? String(subjects[0].id) : '';
       setFormData({
         title: '',
         description: '',
-        subject_id: '',
-        department_id: res.data.department_id || 1,
+        subject_id: defaultSub,
+        department_id: deptId,
         semester: 6,
-        section: 'A',
+        section: 'All',
         duration_minutes: 30,
         deadline: deadlineStr,
         start_time: new Date().toISOString().slice(0, 16),
@@ -156,6 +144,8 @@ export default function FacultyQuizzes() {
         max_attempts: 1,
         excluded_student_ids: []
       });
+      setCreateModalOpen(true);
+    }).catch(() => {
       setCreateModalOpen(true);
     });
   };
@@ -277,6 +267,15 @@ export default function FacultyQuizzes() {
     }
   };
 
+  const togglePublishQuiz = async (quizId, shouldPublish) => {
+    try {
+      await client.post(`/faculty/quizzes/${quizId}/publish?publish=${shouldPublish}`);
+      fetchQuizzes();
+    } catch (e) {
+      alert('Failed to update quiz status: ' + (e.response?.data?.detail || e.message));
+    }
+  };
+
   const togglePublishResults = async (quizId, newStatus) => {
     try {
       await client.post(`/faculty/quizzes/${quizId}/publish-results?publish=${newStatus}`);
@@ -393,6 +392,18 @@ export default function FacultyQuizzes() {
 
               <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
                 <button
+                  onClick={() => togglePublishQuiz(q.id, q.status !== 'published')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition-colors ${
+                    q.status === 'published'
+                      ? 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                      : 'border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  }`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{q.status === 'published' ? 'Unpublish' : 'Publish Quiz'}</span>
+                </button>
+
+                <button
                   onClick={() => handleOpenRoster(q)}
                   className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors"
                 >
@@ -456,29 +467,47 @@ export default function FacultyQuizzes() {
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
-                Subject ID / Code *
+                Subject Course *
               </label>
-              <input
-                type="number"
+              <select
                 required
                 value={formData.subject_id}
-                onChange={(e) => setFormData({ ...formData, subject_id: e.target.value })}
-                placeholder="e.g. 1 (CS601)"
+                onChange={(e) => {
+                  const subId = e.target.value;
+                  const selectedSub = subjects.find(s => String(s.id) === String(subId));
+                  setFormData(prev => ({
+                    ...prev,
+                    subject_id: subId,
+                    department_id: selectedSub?.department_id || prev.department_id || 1,
+                    semester: selectedSub?.semester || prev.semester || 6
+                  }));
+                }}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600 bg-white"
-              />
-              <span className="text-[10px] text-slate-400">Enter subject ID (1=DS, 2=CN, 3=OS, 4=DBMS, 5=SE)</span>
+              >
+                <option value="">-- Select Subject Course --</option>
+                {subjects.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.code ? `${s.code} - ${s.name}` : s.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[10px] text-slate-400">Selecting a course automatically configures department &amp; semester</span>
             </div>
 
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
-                Department ID
+                Target Department
               </label>
-              <input
-                type="number"
+              <select
                 value={formData.department_id}
-                onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, department_id: parseInt(e.target.value) || 0 })}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-blue-600 bg-white"
-              />
+              >
+                <option value="0">All Departments (Campus-wide)</option>
+                <option value="1">Computer Science &amp; Engineering (CSE)</option>
+                <option value="2">Information Technology (IT)</option>
+                <option value="3">Electronics &amp; Communication (ECE)</option>
+              </select>
             </div>
 
             <div>

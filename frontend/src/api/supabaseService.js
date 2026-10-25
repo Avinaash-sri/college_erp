@@ -83,6 +83,44 @@ export function calculateStudentCGPAFromMarks(studentId, marksList, subjectsList
 }
 
 /**
+ * Fetch all attendance records from Supabase with pagination to bypass PostgREST 1000 row cap
+ */
+export async function fetchAllAttendanceFromSupabase() {
+  if (!isSupabaseConfigured) return [];
+  let allRecords = [];
+  let page = 0;
+  const pageSize = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    try {
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('*')
+        .order('id', { ascending: false })
+        .range(from, to);
+
+      if (error || !data || data.length === 0) {
+        break;
+      }
+      allRecords = allRecords.concat(data);
+      if (data.length < pageSize) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+      if (page >= 10) break; // Safety limit
+    } catch (e) {
+      console.warn('Pagination notice fetching attendance from Supabase:', e);
+      break;
+    }
+  }
+  return allRecords;
+}
+
+/**
  * Fetch all authoritative application tables from Supabase Cloud
  */
 export async function fetchAuthoritativeCloudState() {
@@ -120,7 +158,7 @@ export async function fetchAuthoritativeCloudState() {
       supabase.from('faculty').select('*').order('id', { ascending: true }),
       supabase.from('departments').select('*').order('id', { ascending: true }),
       supabase.from('subjects').select('*').order('id', { ascending: true }),
-      supabase.from('attendance').select('*').limit(5000),
+      fetchAllAttendanceFromSupabase(),
       supabase.from('marks').select('*').order('id', { ascending: true }),
       supabase.from('assignments').select('*').order('created_at', { ascending: false }),
       supabase.from('assignment_submissions').select('*').order('submitted_at', { ascending: false }),
@@ -159,8 +197,8 @@ export async function fetchAuthoritativeCloudState() {
       ? facultyRes.value.data
       : FACULTY_MEMBERS;
 
-    const rawAttendance = attendanceRes.status === 'fulfilled' && attendanceRes.value.data
-      ? attendanceRes.value.data
+    const rawAttendance = attendanceRes.status === 'fulfilled'
+      ? (Array.isArray(attendanceRes.value) ? attendanceRes.value : (Array.isArray(attendanceRes.value?.data) ? attendanceRes.value.data : []))
       : [];
 
     const rawMarks = marksRes.status === 'fulfilled' && marksRes.value.data
@@ -666,7 +704,7 @@ export async function deleteFacultyInSupabase(facultyId) {
 }
 
 export async function saveAttendanceInSupabase(subjectId, date, sessionName, facultyId, studentRecords) {
-  if (!isSupabaseConfigured) return [];
+  if (!isSupabaseConfigured) return { inserted: [], updatedStats: {} };
 
   const targetSubjectId = parseInt(subjectId) || 1;
   const targetDate = date || new Date().toISOString().split('T')[0];
@@ -701,7 +739,41 @@ export async function saveAttendanceInSupabase(subjectId, date, sessionName, fac
     console.warn('Attendance save notice in Supabase:', error.message);
     throw error;
   }
-  return data;
+
+  // Calculate authoritative updated attendance percentages directly from Supabase for all affected students
+  const updatedStats = {};
+  try {
+    const studentIds = (studentRecords || []).map((r) => parseInt(r.student_id)).filter(Boolean);
+    if (studentIds.length > 0) {
+      const { data: attHistory, error: histErr } = await supabase
+        .from('attendance')
+        .select('student_id, status')
+        .in('student_id', studentIds);
+
+      if (!histErr && Array.isArray(attHistory)) {
+        studentIds.forEach((sId) => {
+          const sRecords = attHistory.filter((a) => a.student_id === sId);
+          const conducted = sRecords.length;
+          const attended = sRecords.filter((a) => a.status === 'Present' || a.status === 'Late').length;
+          const pct = conducted > 0 ? Number(((attended / conducted) * 100).toFixed(1)) : 0.0;
+          const riskStatus = pct >= 75.0 ? 'Safe' : (pct >= 65.0 ? 'Warning' : 'High Risk');
+          const recoveryClasses = pct < 75.0 ? Math.max(1, Math.ceil(3 * conducted - 4 * attended)) : 0;
+
+          updatedStats[sId] = {
+            overall_attendance: pct,
+            total_conducted: conducted,
+            total_attended: attended,
+            risk_status: riskStatus,
+            recovery_classes: recoveryClasses
+          };
+        });
+      }
+    }
+  } catch (statErr) {
+    console.warn('Notice computing authoritative attendance stats from Supabase:', statErr?.message);
+  }
+
+  return { inserted: data, updatedStats };
 }
 
 export async function saveMarksInSupabase(marksData) {

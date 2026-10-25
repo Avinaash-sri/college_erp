@@ -3221,7 +3221,40 @@ const client = {
           if (!facId && stateFaculty?.length > 0) {
             facId = stateFaculty[0].id;
           }
-          await saveAttendanceInSupabase(subId, dateVal, session_name, facId || 2, records);
+          const attResult = await saveAttendanceInSupabase(subId, dateVal, session_name, facId || 2, records);
+          if (attResult?.updatedStats && Object.keys(attResult.updatedStats).length > 0) {
+            Object.keys(attResult.updatedStats).forEach((sId) => {
+              const numId = parseInt(sId);
+              const stIdx = stateStudents.findIndex((s) => s.id === numId);
+              if (stIdx !== -1) {
+                stateStudents[stIdx] = {
+                  ...stateStudents[stIdx],
+                  ...attResult.updatedStats[sId]
+                };
+              }
+            });
+          }
+
+          // Persist attendance alerts to Supabase attendance_alerts table
+          if (alerts.length > 0) {
+            try {
+              const alertRows = alerts.map((al) => {
+                const matched = stateStudents.find((s) => s.reg_no === al.reg_no);
+                return {
+                  student_id: matched?.id || 101,
+                  attendance_pct: al.new_pct,
+                  parent_email: al.parent_email,
+                  alert_type: al.new_pct < 65 ? 'Severe Defaulter Notice (<65%)' : 'Warning Notification (65% - 75%)',
+                  status: 'Sent',
+                  academic_term: '2025-26 Term 2',
+                  recovery_classes: matched?.recovery_classes || 4
+                };
+              });
+              await supabase.from('attendance_alerts').insert(alertRows);
+            } catch (alertDbErr) {
+              console.warn('Notice saving attendance alert to Supabase:', alertDbErr?.message);
+            }
+          }
         } catch (attErr) {
           console.warn('Supabase attendance save warning:', attErr.message);
         }
@@ -3232,11 +3265,31 @@ const client = {
       setStored('students', stateStudents);
       setStored('alert_logs', stateAlertLogs);
 
+      // Build authoritative updated roster for immediate UI rendering
+      const sub = (stateSubjects || SUBJECTS).find((s) => s.id === subId) || { department_id: 3 };
+      let enrolled = stateStudents.filter((s) => s.department_id === sub.department_id);
+      if (enrolled.length === 0) {
+        enrolled = stateStudents.filter((s) => s.department_id === 3);
+      }
+      if (enrolled.length === 0) {
+        enrolled = stateStudents;
+      }
+
+      const updatedRoster = enrolled.map((st) => ({
+        student_id: st.id,
+        reg_no: st.reg_no,
+        name: st.name,
+        overall_attendance: st.overall_attendance,
+        risk_status: st.risk_status,
+        status: sessionMap[st.id] || 'Present'
+      }));
+
       return {
         data: {
           message: `Attendance recorded successfully for ${(records || []).length} students.`,
           count: (records || []).length,
-          alerts_triggered: alerts
+          alerts_triggered: alerts,
+          students: updatedRoster
         }
       };
     }

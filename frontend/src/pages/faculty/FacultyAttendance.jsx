@@ -37,9 +37,11 @@ export default function FacultyAttendance() {
     }
   }, [selectedSubject, date]);
 
-  const fetchSessionData = (subId, dateVal) => {
+  const fetchSessionData = (subId, dateVal, preserveFeedback = false) => {
     setLoading(true);
-    setFeedback(null);
+    if (!preserveFeedback) {
+      setFeedback(null);
+    }
     client.get(`/faculty/attendance/session?subject_id=${subId}&date=${dateVal}`)
       .then((res) => {
         const stList = Array.isArray(res.data?.students)
@@ -83,13 +85,16 @@ export default function FacultyAttendance() {
 
       const res = await client.post('/faculty/attendance', payload);
       setJustSaved(true);
+      if (res.data?.students && Array.isArray(res.data.students) && res.data.students.length > 0) {
+        setStudents(res.data.students);
+      }
       setFeedback({
         type: 'success',
         message: res.data.message || 'Attendance saved and synchronized with cloud database.',
         alerts: res.data.alerts_triggered || [],
       });
-      // Refresh to update current percentages
-      fetchSessionData(selectedSubject, date);
+      // Refresh session data in background while preserving feedback
+      fetchSessionData(selectedSubject, date, true);
       setTimeout(() => {
         setJustSaved(false);
       }, 3500);

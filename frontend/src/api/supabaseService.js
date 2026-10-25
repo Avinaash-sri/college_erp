@@ -295,6 +295,28 @@ export async function fetchAuthoritativeCloudState() {
         })
       : [];
 
+    // Enrich fees with student profile details and computed pending amounts
+    const enrichedFees = (feesRes.status === 'fulfilled' && Array.isArray(feesRes.value.data))
+      ? feesRes.value.data.map((f) => {
+          const st = rawStudents.find((s) => s.id === f.student_id);
+          const totalAmt = parseFloat(f.total_amount) || 0;
+          const paidAmt = parseFloat(f.paid_amount) || 0;
+          const pendingAmt = Math.max(0, totalAmt - paidAmt);
+          return {
+            ...f,
+            student_name: st?.name || f.student_name || (st?.reg_no ? `Student ${st.reg_no}` : `Student #${f.student_id}`),
+            name: st?.name || f.name || '',
+            reg_no: st?.reg_no || f.reg_no || '',
+            student_reg_no: st?.reg_no || f.reg_no || '',
+            department: st?.department || st?.department_name || '',
+            total_amount: totalAmt,
+            paid_amount: paidAmt,
+            pending_amount: pendingAmt,
+            status: f.status || (pendingAmt === 0 ? 'Paid' : (paidAmt > 0 ? 'Partially Paid' : 'Pending'))
+          };
+        })
+      : [];
+
     const cloudAlertLogs = alertsRes.status === 'fulfilled' && alertsRes.value.data
       ? alertsRes.value.data
       : [];
@@ -316,7 +338,7 @@ export async function fetchAuthoritativeCloudState() {
       notifications: notificationsRes.status === 'fulfilled' && notificationsRes.value.data?.length ? notificationsRes.value.data : NOTIFICATIONS,
       complaints: enrichedComplaints,
       leave_requests: enrichedLeaveRequests,
-      fees: feesRes.status === 'fulfilled' && feesRes.value.data?.length ? feesRes.value.data : [],
+      fees: enrichedFees,
       calendar_events: calendarRes.status === 'fulfilled' && calendarRes.value.data?.length ? calendarRes.value.data : [],
       timetable: timetableRes.status === 'fulfilled' && timetableRes.value.data?.length ? timetableRes.value.data : [],
       settings: settingsRes.status === 'fulfilled' && settingsRes.value.data?.length ? settingsRes.value.data[0] : null,

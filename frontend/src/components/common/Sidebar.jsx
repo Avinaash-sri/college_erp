@@ -87,6 +87,7 @@ export default function Sidebar({ mobileMenuOpen, onClose }) {
     { name: 'Quizzes',            to: '/faculty/quizzes',      icon: HelpCircle },
     { name: 'Assignments',        to: '/faculty/assignments',  icon: BookMarked },
     { name: 'Marks',              to: '/faculty/marks',        icon: FileSpreadsheet },
+    { name: 'Student Fees',        to: '/faculty/fees',         icon: CreditCard },
     { name: 'Study Materials',    to: '/faculty/materials',    icon: FileUp },
     { name: 'Leave Requests',     to: '/faculty/leave',        icon: CalendarDays },
     { name: 'Timetable',          to: '/faculty/timetable',    icon: Clock },

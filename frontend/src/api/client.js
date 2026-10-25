@@ -1870,8 +1870,31 @@ const client = {
       return { data: res };
     }
 
-    if (url === '/admin/fees') {
-      const records = [...stateFees];
+    if (url === '/admin/fees' || url === '/faculty/fees') {
+      if (isSupabaseConfigured) {
+        try {
+          await syncWithSupabase();
+        } catch (e) {}
+      }
+      const records = stateFees.map((f) => {
+        const st = stateStudents.find((s) => s.id === f.student_id);
+        const totalAmt = parseFloat(f.total_amount) || 0;
+        const paidAmt = parseFloat(f.paid_amount) || 0;
+        const pendingAmt = Math.max(0, totalAmt - paidAmt);
+        return {
+          ...f,
+          student_name: st?.name || f.student_name || (st?.reg_no ? `Student ${st.reg_no}` : `Student #${f.student_id}`),
+          name: st?.name || f.name || '',
+          reg_no: st?.reg_no || f.reg_no || '',
+          student_reg_no: st?.reg_no || f.reg_no || '',
+          department: st?.department || st?.department_name || '',
+          total_amount: totalAmt,
+          paid_amount: paidAmt,
+          pending_amount: pendingAmt,
+          status: f.status || (pendingAmt === 0 ? 'Paid' : (paidAmt > 0 ? 'Partially Paid' : 'Pending'))
+        };
+      });
+
       const totalAssessed = records.reduce((acc, r) => acc + (parseFloat(r.total_amount) || 0), 0);
       const totalCollected = records.reduce((acc, r) => acc + (parseFloat(r.paid_amount) || 0), 0);
       const totalPending = Math.max(0, totalAssessed - totalCollected);

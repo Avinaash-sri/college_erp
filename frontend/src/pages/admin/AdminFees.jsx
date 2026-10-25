@@ -135,8 +135,12 @@ export default function AdminFees() {
             <tbody className="divide-y divide-slate-100">
               {(Array.isArray(fees) ? fees : []).map((f) => (
                 <tr key={f.id} className="hover:bg-slate-50/60 transition-colors">
-                  <td className="py-3 px-3 font-bold text-slate-900">{f.student_name}</td>
-                  <td className="py-3 px-3 font-mono font-semibold text-slate-700">{f.reg_no}</td>
+                  <td className="py-3 px-3 font-bold text-slate-900">
+                    {f.student_name || f.name || (students.find((s) => s.id === f.student_id)?.name) || 'Student'}
+                  </td>
+                  <td className="py-3 px-3 font-mono font-semibold text-slate-700">
+                    {f.reg_no || f.student_reg_no || (students.find((s) => s.id === f.student_id)?.reg_no) || ''}
+                  </td>
                   <td className="py-3 px-3 text-slate-700 font-medium">{f.title || 'Semester Fee'}</td>
                   <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">₹{(f.total_amount ?? 85000).toLocaleString()}</td>
                   <td className="py-3 px-3 text-right font-mono font-semibold text-emerald-700">₹{(f.paid_amount ?? 0).toLocaleString()}</td>

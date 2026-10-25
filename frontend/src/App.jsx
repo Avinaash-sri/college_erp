@@ -191,6 +191,7 @@ export default function App() {
           <Route path="/faculty/assignments"  element={<ProtectedRoute allowedRoles={['faculty']}><FacultyAssignments /></ProtectedRoute>} />
           {/* New Faculty Routes */}
           <Route path="/faculty/leave"        element={<ProtectedRoute allowedRoles={['faculty']}><FacultyLeave /></ProtectedRoute>} />
+          <Route path="/faculty/fees"         element={<ProtectedRoute allowedRoles={['faculty', 'admin']}><AdminFees /></ProtectedRoute>} />
           <Route path="/faculty/materials"    element={<ProtectedRoute allowedRoles={['faculty']}><FacultyMaterials /></ProtectedRoute>} />
           <Route path="/faculty/notifications" element={<ProtectedRoute allowedRoles={['faculty']}><FacultyNotifications /></ProtectedRoute>} />
 
@@ -202,7 +203,7 @@ export default function App() {
           <Route path="/admin/subjects"           element={<ProtectedRoute allowedRoles={['admin']}><AdminSubjects /></ProtectedRoute>} />
           <Route path="/admin/timetable"          element={<ProtectedRoute allowedRoles={['admin']}><AdminTimetable /></ProtectedRoute>} />
           <Route path="/admin/exams"              element={<ProtectedRoute allowedRoles={['admin']}><AdminExams /></ProtectedRoute>} />
-          <Route path="/admin/fees"               element={<ProtectedRoute allowedRoles={['admin']}><AdminFees /></ProtectedRoute>} />
+          <Route path="/admin/fees"               element={<ProtectedRoute allowedRoles={['admin', 'faculty']}><AdminFees /></ProtectedRoute>} />
           <Route path="/admin/placements"         element={<ProtectedRoute allowedRoles={['admin']}><AdminPlacements /></ProtectedRoute>} />
           <Route path="/admin/notifications"      element={<ProtectedRoute allowedRoles={['admin']}><AdminNotifications /></ProtectedRoute>} />
           <Route path="/admin/announcements"      element={<ProtectedRoute allowedRoles={['admin']}><AdminAnnouncements /></ProtectedRoute>} />

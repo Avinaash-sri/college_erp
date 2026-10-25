@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "College ERP Administration"
     SMTP_USE_TLS: bool = True
 
+    # Resend HTTPS API Gateway (works seamlessly on cloud platforms like Render where port 587 is blocked)
+    RESEND_API_KEY: Optional[str] = None
+    RESEND_FROM_EMAIL: str = "College Academic Office <onboarding@resend.dev>"
+
     # Frontend URL for CORS
     FRONTEND_URL: str = "http://localhost:5173"
 

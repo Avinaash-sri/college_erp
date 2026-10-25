@@ -1,3 +1,4 @@
+import os
 import smtplib
 import socket
 import time
@@ -6,6 +7,7 @@ import re
 import hashlib
 import datetime
 import logging
+import httpx
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, Optional, List
@@ -147,7 +149,8 @@ def get_effective_smtp_config(db: Optional[Session] = None) -> Dict[str, Any]:
     except (ValueError, TypeError):
         port = 587
 
-    is_configured = bool(host and username and password)
+    resend_key = (os.getenv("RESEND_API_KEY") or getattr(settings, "RESEND_API_KEY", None) or "").strip()
+    is_configured = bool((host and username and password) or resend_key)
 
     return {
         "host": host if host else None,
@@ -157,7 +160,8 @@ def get_effective_smtp_config(db: Optional[Session] = None) -> Dict[str, Any]:
         "from_email": from_email,
         "from_name": from_name,
         "use_tls": use_tls,
-        "is_configured": is_configured
+        "is_configured": is_configured,
+        "has_resend": bool(resend_key)
     }
 
 
@@ -283,6 +287,86 @@ Office of Academic Affairs
     }
 
 
+def send_via_resend(
+    to_email: str,
+    subject: str,
+    html_content: str,
+    text_content: str,
+    cc_email: Optional[str] = None,
+    api_key: Optional[str] = None,
+    from_email: Optional[str] = None,
+    event_type: str = "attendance_alert"
+) -> Optional[Dict[str, Any]]:
+    """
+    Sends email over HTTPS port 443 using Resend API.
+    Bypasses cloud provider SMTP firewall blocks (like Render free tier).
+    """
+    effective_key = (api_key or os.getenv("RESEND_API_KEY") or getattr(settings, "RESEND_API_KEY", None) or "").strip()
+    if not effective_key:
+        return None
+
+    sender = (from_email or os.getenv("RESEND_FROM_EMAIL") or getattr(settings, "RESEND_FROM_EMAIL", None) or "College Academic Office <onboarding@resend.dev>").strip()
+    recipients = [to_email]
+    if cc_email and "@" in cc_email and cc_email != to_email:
+        recipients.append(cc_email)
+
+    payload = {
+        "from": sender,
+        "to": recipients,
+        "subject": subject,
+        "html": html_content,
+        "text": text_content
+    }
+
+    start_time = time.time()
+    try:
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {effective_key}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=15.0
+        )
+        duration_ms = (time.time() - start_time) * 1000
+
+        if response.status_code in (200, 201):
+            res_data = response.json()
+            email_id = res_data.get("id", "resend_ok")
+            log_structured_email_event(
+                event_type=event_type,
+                recipient=to_email,
+                status="Sent",
+                duration_ms=duration_ms,
+                provider_code=f"Resend HTTP {response.status_code} ({email_id})"
+            )
+            return {
+                "status": "Sent",
+                "delivery_status": "Delivered via Resend HTTPS API",
+                "message": f"Email successfully accepted by Resend API (ID: {email_id}) for delivery to {', '.join(recipients)}",
+                "preview": html_content,
+                "subject": subject,
+                "error": None,
+                "attempts": 1,
+                "provider_code": f"Resend {email_id}",
+                "idempotent_replay": False
+            }
+        else:
+            logger.warning(f"Resend API returned status {response.status_code}: {response.text}")
+            log_structured_email_event(
+                event_type=event_type,
+                recipient=to_email,
+                status="Resend Error",
+                duration_ms=duration_ms,
+                error_detail=f"Resend HTTP {response.status_code}: {response.text[:200]}"
+            )
+            return None
+    except Exception as exc:
+        logger.error(f"Failed to send via Resend HTTPS API: {exc}")
+        return None
+
+
 def send_smtp_message(
     to_email: str,
     subject: str,
@@ -351,6 +435,19 @@ def send_smtp_message(
             cached_res["idempotent_replay"] = True
             cached_res["message"] = f"Notice already confirmed by SMTP provider within last {int(elapsed)}s. Duplicate suppressed."
             return cached_res
+
+    # 2.5 Resend HTTPS API Gateway (Bypasses cloud provider SMTP firewall blocks like Render free tier)
+    resend_result = send_via_resend(
+        to_email=clean_to_email,
+        subject=subject,
+        html_content=html_content,
+        text_content=text_content,
+        cc_email=clean_cc,
+        event_type=event_type
+    )
+    if resend_result and resend_result.get("status") == "Sent":
+        _idempotency_cache[cache_key] = {"sent_at": now_ts, "result": resend_result}
+        return resend_result
 
     # 3. Check if SMTP credentials are configured
     config = custom_config or get_effective_smtp_config(db)

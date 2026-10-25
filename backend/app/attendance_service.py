@@ -17,7 +17,7 @@ def calculate_recovery_classes(attended: int, total: int, required_pct: float = 
       x >= 3 * total - 4 * attended
     """
     if total == 0:
-        return 0
+        return 4
     current_pct = (attended / total) * 100
     if current_pct >= required_pct:
         return 0
@@ -40,11 +40,13 @@ def get_risk_status(percentage: float) -> str:
 def get_student_overall_stats(db: Session, student_id: int) -> Tuple[int, int, float, str, int]:
     """
     Returns (attended, total, percentage, risk_status, recovery_classes)
+    For newly registered students with 0 conducted classes, evaluates to 0.0% (HIGH RISK)
+    so they are highlighted in the Attendance Alert center with parent contacts.
     """
     records = db.query(models.AttendanceRecord).filter(models.AttendanceRecord.student_id == student_id).all()
     total = len(records)
     attended = sum(1 for r in records if r.status == "Present")
-    pct = round((attended / total) * 100, 2) if total > 0 else 100.0
+    pct = round((attended / total) * 100, 2) if total > 0 else 0.0
     status = get_risk_status(pct)
     recovery = calculate_recovery_classes(attended, total, settings.SAFE_THRESHOLD)
     return attended, total, pct, status, recovery

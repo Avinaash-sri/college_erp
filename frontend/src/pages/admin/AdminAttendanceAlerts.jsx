@@ -258,7 +258,7 @@ export default function AdminAttendanceAlerts() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             disabled={testingSmtp}
@@ -299,7 +299,7 @@ export default function AdminAttendanceAlerts() {
       )}
 
       {/* Primary Table: Students Below 75% */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs">
         <div className="border-b border-slate-100 pb-3 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-slate-900">
@@ -307,7 +307,7 @@ export default function AdminAttendanceAlerts() {
             </h2>
             <p className="text-xs text-slate-400">Institutional action plan: automated parent notifications and manual admin dispatches</p>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded border border-rose-200">
               Below {safe_threshold}%
             </span>

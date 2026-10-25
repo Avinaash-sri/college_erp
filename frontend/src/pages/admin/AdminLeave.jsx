@@ -25,8 +25,8 @@ export default function AdminLeave() {
 
   const fetchLeaves = () => {
     client.get('/admin/leave-requests')
-      .then((res) => setLeaves(Array.isArray(res.data) ? res.data : DEMO_LEAVES))
-      .catch(() => setLeaves(DEMO_LEAVES))
+      .then((res) => setLeaves(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setLeaves([]))
       .finally(() => setLoading(false));
   };
 

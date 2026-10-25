@@ -42,6 +42,24 @@ export default function Sidebar({ mobileMenuOpen, onClose }) {
     navigate('/login');
   };
 
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        onClose?.();
+      }
+    };
+    if (mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+      window.addEventListener('keydown', handleKeyDown);
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [mobileMenuOpen, onClose]);
+
   const studentLinks = [
     { name: 'Dashboard',          to: '/student/dashboard',    icon: LayoutDashboard },
     { name: 'Attendance',         to: '/student/attendance',   icon: CalendarCheck },
@@ -188,19 +206,19 @@ export default function Sidebar({ mobileMenuOpen, onClose }) {
   return (
     <>
       {/* Desktop Sticky Sidebar */}
-      <aside className="hidden md:flex w-60 flex-shrink-0 border-r border-slate-200 flex-col h-[calc(100vh-3.5rem)] sticky top-14">
+      <aside className="hidden md:flex w-60 flex-shrink-0 border-r border-slate-200 flex-col h-full bg-white z-20">
         {sidebarContent}
       </aside>
 
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div className="fixed inset-0 z-50 md:hidden flex" role="dialog" aria-modal="true" aria-label="Navigation Menu">
           <div
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"
             onClick={onClose}
             aria-hidden="true"
           />
-          <div className="fixed inset-y-0 left-0 w-64 max-w-[82vw] bg-white shadow-2xl z-50 animate-slide-left">
+          <div className="relative w-72 max-w-[85vw] bg-white shadow-2xl z-50 flex flex-col h-full animate-slide-left">
             {sidebarContent}
           </div>
         </div>

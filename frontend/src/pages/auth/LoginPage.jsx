@@ -232,12 +232,12 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-blue-950 flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 font-sans selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-blue-950 flex flex-col justify-center py-6 sm:py-10 px-3 sm:px-6 lg:px-8 font-sans selection:bg-blue-600 selection:text-white">
       
       {/* Top University Branding Bar */}
-      <header className="max-w-6xl mx-auto w-full mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+      <header className="max-w-6xl mx-auto w-full mb-6 sm:mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
         <div className="flex items-center space-x-3.5">
-          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-blue-700 to-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/30 border border-blue-400/20">
+          <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-blue-700 to-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-600/30 border border-blue-400/20 shrink-0">
             <GraduationCap className="h-7 w-7" />
           </div>
           <div>
@@ -250,10 +250,10 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="text-xs text-slate-300 bg-slate-900/80 border border-slate-700/60 px-4 py-1.5 rounded-full backdrop-blur-md flex items-center space-x-2.5 shadow-inner">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <div className="text-xs text-slate-300 bg-slate-900/80 border border-slate-700/60 px-3.5 sm:px-4 py-1.5 rounded-full backdrop-blur-md flex flex-wrap items-center justify-center gap-1.5 sm:gap-2.5 shadow-inner text-center">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
           <span className="font-medium text-slate-200">Academic Term: Even Semester 2026</span>
-          <span className="text-slate-600">&bull;</span>
+          <span className="text-slate-600 hidden xs:inline sm:inline">&bull;</span>
           <span className="text-[11px] font-mono text-blue-400">Secure SSO</span>
         </div>
       </header>
@@ -426,38 +426,38 @@ export default function LoginPage() {
         {/* ==================================================================== */}
         {/* RIGHT COLUMN: ENTERPRISE AUTHENTICATION CARD */}
         {/* ==================================================================== */}
-        <section aria-label="Account Authentication Portal" className="lg:col-span-7 bg-white rounded-3xl border border-slate-200/90 shadow-2xl p-6 sm:p-8">
+        <section aria-label="Account Authentication Portal" className="lg:col-span-7 bg-white rounded-3xl border border-slate-200/90 shadow-2xl p-4 sm:p-6 md:p-8">
           
           {/* Modern Navigation Tabs */}
-          <div className="flex rounded-2xl bg-slate-100/90 p-1 mb-6 text-xs font-semibold">
+          <div className="flex rounded-2xl bg-slate-100/90 p-1 mb-6 text-xs font-semibold gap-1">
             <button
               type="button"
               onClick={() => { setActiveTab('login'); setError(''); setSuccessMsg(''); }}
-              className={`flex-1 py-2.5 rounded-xl flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl flex items-center justify-center space-x-1.5 sm:space-x-2 transition-all cursor-pointer text-[11px] sm:text-xs ${
                 activeTab === 'login' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <LogIn className="w-4 h-4" />
+              <LogIn className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span>Sign In</span>
             </button>
             <button
               type="button"
               onClick={() => { setActiveTab('signup'); setError(''); setSuccessMsg(''); }}
-              className={`flex-1 py-2.5 rounded-xl flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl flex items-center justify-center space-x-1.5 sm:space-x-2 transition-all cursor-pointer text-[11px] sm:text-xs ${
                 activeTab === 'signup' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <UserPlus className="w-4 h-4" />
-              <span>Student Registration</span>
+              <UserPlus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span><span className="hidden sm:inline">Student </span>Registration</span>
             </button>
             <button
               type="button"
               onClick={() => { setActiveTab('forgot'); setError(''); setSuccessMsg(''); }}
-              className={`flex-1 py-2.5 rounded-xl flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              className={`flex-1 py-2 sm:py-2.5 px-1.5 sm:px-2 rounded-xl flex items-center justify-center space-x-1.5 sm:space-x-2 transition-all cursor-pointer text-[11px] sm:text-xs ${
                 activeTab === 'forgot' ? 'bg-white text-blue-700 shadow-sm font-bold' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <KeyRound className="w-4 h-4" />
+              <KeyRound className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
               <span>Recovery</span>
             </button>
           </div>

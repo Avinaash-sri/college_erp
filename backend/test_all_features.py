@@ -38,19 +38,19 @@ def run_tests():
     faculty_headers = {"Authorization": f"Bearer {faculty_token}"}
     print("  ✓ Faculty authentication successful (rajesh.kulkarni@college.edu)")
 
-    # Student login (Aarav - CSE Sem 6)
-    res_student = client.post("/auth/login", json={"email": "aarav.sharma@student.edu", "password": "student123"})
+    # Student login (Arun - CSE Sem 6)
+    res_student = client.post("/auth/login", json={"email": "arun@college.edu", "password": "student123"})
     assert res_student.status_code == 200, f"Student login failed: {res_student.text}"
     student_token = res_student.json()["access_token"]
     student_headers = {"Authorization": f"Bearer {student_token}"}
-    print("  ✓ Student Aarav authentication successful (aarav.sharma@student.edu)")
+    print("  ✓ Student Arun authentication successful (arun@college.edu)")
 
-    # Student 2 login (Vikram - CSE Sem 6)
-    res_std2 = client.post("/auth/login", json={"email": "vikram.singh@student.edu", "password": "student123"})
-    assert res_std2.status_code == 200, f"Student Vikram login failed: {res_std2.text}"
+    # Student 2 login (Sanjay - CSE Sem 6)
+    res_std2 = client.post("/auth/login", json={"email": "sanjay@college.edu", "password": "student123"})
+    assert res_std2.status_code == 200, f"Student Sanjay login failed: {res_std2.text}"
     student2_token = res_std2.json()["access_token"]
     student2_headers = {"Authorization": f"Bearer {student2_token}"}
-    print("  ✓ Student Vikram authentication successful (vikram.singh@student.edu)")
+    print("  ✓ Student Sanjay authentication successful (sanjay@college.edu)")
 
     # 2. MODULE 1: DEPARTMENT-WISE QUIZ MANAGEMENT
     print("\n[TEST 2] Testing Department-wise Quiz Management...")
@@ -61,9 +61,9 @@ def run_tests():
     assert len(eligible_students) >= 2, "Expected at least 2 eligible students in CSE Sem 6"
     print(f"  ✓ Fetched {len(eligible_students)} eligible students from database based on Dept/Sem/Sec filters")
 
-    # B. Faculty creates a new quiz with Vikram excluded
-    aarav_id = next(s["id"] for s in eligible_students if "aarav" in s["email"])
-    vikram_id = next(s["id"] for s in eligible_students if "vikram" in s["email"])
+    # B. Faculty creates a new quiz with Sanjay excluded
+    arun_id = next(s["id"] for s in eligible_students if "arun" in s["email"])
+    sanjay_id = next(s["id"] for s in eligible_students if "sanjay" in s["email"])
 
     quiz_payload = {
         "title": "Automated Test Quiz: Graph Algorithms",
@@ -75,7 +75,7 @@ def run_tests():
         "duration_minutes": 15,
         "deadline": (datetime.datetime.utcnow() + datetime.timedelta(days=2)).isoformat(),
         "status": "published",
-        "excluded_student_ids": [vikram_id],  # Exclude Vikram!
+        "excluded_student_ids": [sanjay_id],  # Exclude Sanjay!
         "questions": [
             {
                 "question_text": "What is the time complexity of Dijkstra's algorithm with a Min-Heap?",
@@ -111,18 +111,18 @@ def run_tests():
     quiz_id = created_quiz["id"]
     print(f"  ✓ Faculty created and published quiz id={quiz_id} with 2 questions (Total: {created_quiz['total_marks']} marks)")
 
-    # C. Verify Student Eligibility: Aarav sees it, Vikram (excluded) does NOT
-    res_aarav_quizzes = client.get("/students/me/quizzes", headers=student_headers)
-    assert res_aarav_quizzes.status_code == 200
-    aarav_quiz_ids = [q["id"] for q in res_aarav_quizzes.json()]
-    assert quiz_id in aarav_quiz_ids, "Aarav should see the quiz"
-    print("  ✓ Eligible student (Aarav) correctly sees the published quiz")
+    # C. Verify Student Eligibility: Arun sees it, Sanjay (excluded) does NOT
+    res_arun_quizzes = client.get("/students/me/quizzes", headers=student_headers)
+    assert res_arun_quizzes.status_code == 200
+    arun_quiz_ids = [q["id"] for q in res_arun_quizzes.json()]
+    assert quiz_id in arun_quiz_ids, "Arun should see the quiz"
+    print("  ✓ Eligible student (Arun) correctly sees the published quiz")
 
-    res_vikram_quizzes = client.get("/students/me/quizzes", headers=student2_headers)
-    assert res_vikram_quizzes.status_code == 200
-    vikram_quiz_ids = [q["id"] for q in res_vikram_quizzes.json()]
-    assert quiz_id not in vikram_quiz_ids, "Vikram was excluded and must NOT see the quiz"
-    print("  ✓ Excluded student (Vikram) correctly blocked from quiz roster")
+    res_sanjay_quizzes = client.get("/students/me/quizzes", headers=student2_headers)
+    assert res_sanjay_quizzes.status_code == 200
+    sanjay_quiz_ids = [q["id"] for q in res_sanjay_quizzes.json()]
+    assert quiz_id not in sanjay_quiz_ids, "Sanjay was excluded and must NOT see the quiz"
+    print("  ✓ Excluded student (Sanjay) correctly blocked from quiz roster")
 
     # D. Excluded student tries direct API GET -> 403 Forbidden
     res_direct_blocked = client.get(f"/students/me/quizzes/{quiz_id}", headers=student2_headers)
@@ -206,23 +206,23 @@ def run_tests():
         assert s["status"] == "Pending — Not Submitted", f"Initial status should be Pending — Not Submitted, got {s['status']}"
     print(f"  ✓ Faculty roster verified: {roster['pending_count']} students confirmed in 'Pending — Not Submitted' status (RED INDICATOR)")
 
-    # C. Student Aarav submits a Google Drive Link
+    # C. Student Arun submits a Google Drive Link
     gdrive_payload = {
         "drive_link": "https://drive.google.com/file/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/view?usp=sharing",
         "confirmed_access_granted": True
     }
     res_sub_link = client.post(f"/students/me/assignments/{assign_id}/submit-drive", json=gdrive_payload, headers=student_headers)
     assert res_sub_link.status_code == 200, f"Submit drive link failed: {res_sub_link.text}"
-    print("  ✓ Student Aarav successfully submitted Google Drive link")
+    print("  ✓ Student Arun successfully submitted Google Drive link")
 
-    # D. Verify Roster updated: Aarav is now Submitted, Vikram remains Pending
+    # D. Verify Roster updated: Arun is now Submitted, Sanjay remains Pending
     res_roster_updated = client.get(f"/faculty/assignments/{assign_id}/roster", headers=faculty_headers)
     roster_u = res_roster_updated.json()
-    aarav_entry = next(s for s in roster_u["roster"] if "aarav" in s["email"])
-    vikram_entry = next(s for s in roster_u["roster"] if "vikram" in s["email"])
-    assert aarav_entry["status"] == "Submitted"
-    assert vikram_entry["status"] == "Pending — Not Submitted"
-    print("  ✓ Roster dynamically updated: Aarav is 'Submitted', Vikram remains 'Pending — Not Submitted' (Red)")
+    arun_entry = next(s for s in roster_u["roster"] if "arun" in s["email"])
+    sanjay_entry = next(s for s in roster_u["roster"] if "sanjay" in s["email"])
+    assert arun_entry["status"] == "Submitted"
+    assert sanjay_entry["status"] == "Pending — Not Submitted"
+    print("  ✓ Roster dynamically updated: Arun is 'Submitted', Sanjay remains 'Pending — Not Submitted' (Red)")
 
     # E. Trigger reminder run on backend and verify persistent audit log
     res_remind = client.post(f"/faculty/assignments/{assign_id}/trigger-reminders", headers=faculty_headers)

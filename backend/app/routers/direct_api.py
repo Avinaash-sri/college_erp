@@ -40,6 +40,8 @@ class BulkDispatchPayload(BaseModel):
 
 class TestSmtpPayload(BaseModel):
     to_email: Optional[str] = None
+    test_email: Optional[str] = None
+    recipient_email: Optional[str] = None
 
 class DirectChatPayload(BaseModel):
     message: str
@@ -172,8 +174,10 @@ def test_smtp_gateway(payload: Optional[TestSmtpPayload] = None, db: Session = D
     """
     Tests SMTP connection and optionally sends a test verification message.
     """
-    target_email = payload.to_email if payload and payload.to_email else None
-    res = test_smtp_connection(test_email=target_email, db=db)
+    target_email = None
+    if payload:
+        target_email = payload.to_email or payload.test_email or payload.recipient_email
+    res = test_smtp_connection(to_email=target_email or "examplecollegeerp@gmail.com", db=db)
     return res
 
 

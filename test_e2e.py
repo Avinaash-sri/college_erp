@@ -30,9 +30,9 @@ def run_tests():
         print(f"Backend Health: HTTP {b_res.status} OK")
 
     print("\n=== 2. STUDENT WORKFLOW ===")
-    # Login as Vikram Singh (58% High Risk)
+    # Login as Sanjay Kumar (58% High Risk)
     login_res = post_json(f"{BASE_BACKEND}/auth/login", {
-        "email": "vikram.singh@student.edu",
+        "email": "sanjay@college.edu",
         "password": "student123"
     })
     token = login_res["access_token"]
@@ -45,7 +45,7 @@ def run_tests():
     rec = dash["attendance"]["recovery_classes"]
     print(f"Student Dashboard: Reg No={dash['student']['reg_no']}, Att={att_pct}%, Risk={risk}")
     print(f"Attendance Recovery Action: Attend {rec} more consecutive classes to reach 75%")
-    assert att_pct < 75.0, "Vikram should be under 75%"
+    assert att_pct < 75.0, "Sanjay should be under 75%"
     assert rec > 0, "Recovery classes must be > 0"
 
     # AI ERP Assistant Test

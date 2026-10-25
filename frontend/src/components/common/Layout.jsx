@@ -10,18 +10,20 @@ export default function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans relative">
+    <div className="h-screen h-[100dvh] bg-slate-50 flex flex-col font-sans overflow-hidden w-full max-w-full">
       <Header
         onMenuToggle={() => setMobileMenuOpen((prev) => !prev)}
         mobileMenuOpen={mobileMenuOpen}
       />
-      <div className="flex flex-1 relative">
+      <div className="flex flex-1 min-h-0 w-full overflow-hidden relative">
         <Sidebar
           mobileMenuOpen={mobileMenuOpen}
           onClose={() => setMobileMenuOpen(false)}
         />
-        <main className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full min-w-0">
-          <Outlet />
+        <main className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto h-full w-full min-w-0">
+          <div className="max-w-7xl mx-auto w-full pb-8">
+            <Outlet />
+          </div>
         </main>
       </div>
 

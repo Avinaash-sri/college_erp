@@ -105,7 +105,7 @@ export default function FloatingAIAssistant() {
   };
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 select-none">
+    <div className="fixed bottom-3 right-3 sm:bottom-5 sm:right-5 z-50 select-none">
       {/* Floating Trigger Button: 75% idle opacity, subtle hover lift & soft shadow transition, motion-safe */}
       {!isOpen && (
         <button
@@ -126,8 +126,8 @@ export default function FloatingAIAssistant() {
       {/* Responsive Floating Chat Panel (constrained to viewport) */}
       {isOpen && (
         <div
-          className={`w-80 sm:w-96 max-w-[calc(100vw-2.5rem)] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-200 ${
-            isMinimized ? 'h-14' : 'h-[500px] max-h-[calc(100vh-6rem)]'
+          className={`w-[calc(100vw-1.5rem)] sm:w-96 max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-200 ${
+            isMinimized ? 'h-14' : 'h-[480px] max-h-[calc(100dvh-4.5rem)]'
           }`}
           role="dialog"
           aria-label="Student AI ERP Assistant"

@@ -339,7 +339,7 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 w-full items-center justify-between border-b border-slate-200/80 bg-white/95 backdrop-blur-md px-3 sm:px-5 shadow-2xs">
+    <header className="sticky top-0 z-40 flex-shrink-0 flex h-14 w-full items-center justify-between border-b border-slate-200/80 bg-white/95 backdrop-blur-md px-3 sm:px-5 shadow-2xs">
       {/* Left: Menu button + Brand Logo */}
       <div className="flex items-center gap-3 flex-shrink-0">
         <button
@@ -376,7 +376,7 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
             }}
             onFocus={() => setSearchOpen(true)}
             onKeyDown={handleSearchKeyDown}
-            placeholder={`Search modules, subjects, actions... (Press / to focus)`}
+            placeholder="Search modules, subjects... (Press /)"
             className="w-full h-9 pl-9 pr-8 text-xs bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-slate-900 rounded-lg border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all placeholder:text-slate-400"
           />
           {searchQuery && (
@@ -472,7 +472,7 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
 
           {/* Notification Dropdown Panel */}
           {notifDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl bg-white shadow-xl border border-slate-200/90 overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+            <div className="fixed inset-x-3 top-14 sm:absolute sm:inset-x-auto sm:top-full sm:right-0 mt-2 sm:w-96 rounded-xl bg-white shadow-xl border border-slate-200/90 overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150">
               {/* Header */}
               <div className="px-4 py-3 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -591,7 +591,7 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
       {toastNotif && (
         <div
           role="alert"
-          className="fixed bottom-6 right-6 z-50 max-w-sm w-full bg-white rounded-2xl shadow-2xl border border-blue-200/90 p-4 transition-all duration-300 flex items-start gap-3.5 ring-1 ring-blue-500/10 backdrop-blur-md"
+          className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 left-4 sm:left-auto z-50 max-w-sm w-auto sm:w-full bg-white rounded-2xl shadow-2xl border border-blue-200/90 p-4 transition-all duration-300 flex items-start gap-3.5 ring-1 ring-blue-500/10 backdrop-blur-md"
         >
           <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 shadow-2xs">
             <Bell className="w-4 h-4 animate-bounce" />

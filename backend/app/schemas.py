@@ -668,6 +668,7 @@ class ChatResponse(BaseModel):
 
 class TestSMTPRequest(BaseModel):
     to_email: Optional[str] = None
+    recipient_email: Optional[str] = None
 
 # Leave Requests
 class LeaveRequestCreate(BaseModel):

@@ -26,13 +26,13 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
         onClick={onClose}
       />
 
-      <div className="flex min-h-full items-center justify-center p-4 text-center">
+      <div className="flex min-h-full items-center justify-center p-2.5 sm:p-4 text-center">
         <div 
-          className={`relative w-full ${maxWidth} transform overflow-hidden rounded-xl bg-white text-left align-middle shadow-xl transition-all border border-slate-200`}
+          className={`relative w-full ${maxWidth} transform overflow-hidden rounded-xl sm:rounded-2xl bg-white text-left align-middle shadow-xl transition-all border border-slate-200`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4">
             <h3 className="text-base font-semibold text-slate-900">{title}</h3>
             <button
               type="button"
@@ -44,7 +44,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
           </div>
 
           {/* Body */}
-          <div className="px-6 py-4 max-h-[75vh] overflow-y-auto">
+          <div className="px-4 sm:px-6 py-4 max-h-[82vh] overflow-y-auto">
             {children}
           </div>
         </div>

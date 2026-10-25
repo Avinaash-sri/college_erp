@@ -204,9 +204,9 @@ The login screen features an instant **1-Click Demo Account Switcher** allowing 
 |---|---|---|---|---|
 | **Admin** | System Administrator | `admin@college.edu` | `admin123` | Institutional KPIs, CRUD, Alert Center |
 | **Faculty** | Dr. Rajesh Kulkarni | `rajesh.kulkarni@college.edu` | `faculty123` | HOD CSE, Marks Attendance, Student Risk Monitor |
-| **Student** | Aarav Sharma | `aarav.sharma@student.edu` | `student123` | **81.6% SAFE** (Normal standing) |
-| **Student** | Ananya Iyer | `ananya.iyer@student.edu` | `student123` | **68.0% WARNING** (Parent alert logged) |
-| **Student** | Vikram Singh | `vikram.singh@student.edu` | `student123` | **57.6% HIGH RISK** (Critical shortage) |
+| **Student** | Arun Kumar | `arun@college.edu` | `student123` | **81.6% SAFE** (Normal standing) |
+| **Student** | Pooja Sundaram | `pooja@college.edu` | `student123` | **68.0% WARNING** (Parent alert logged) |
+| **Student** | Sanjay Kumar | `sanjay@college.edu` | `student123` | **57.6% HIGH RISK** (Critical shortage) |
 
 ---
 

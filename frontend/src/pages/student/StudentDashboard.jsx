@@ -80,7 +80,7 @@ export default function StudentDashboard() {
       )}
 
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         <StatCard
           title="Overall Attendance"
           value={`${attendance.overall_percentage}%`}
@@ -118,7 +118,7 @@ export default function StudentDashboard() {
       {/* Timetable & Exams Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Today's Schedule */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
             <div>
               <h2 className="text-sm font-bold text-slate-900">Today's Class Schedule</h2>
@@ -135,17 +135,17 @@ export default function StudentDashboard() {
           ) : (
             <div className="space-y-2.5">
               {today_classes.map((cls) => (
-                <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-16 text-center font-mono text-xs font-bold text-slate-700 bg-white border border-slate-200 py-1 rounded">
+                <div key={cls.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors gap-2">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="w-16 text-center font-mono text-xs font-bold text-slate-700 bg-white border border-slate-200 py-1 rounded shrink-0">
                       {cls.start_time ? cls.start_time.split(' ')[0] : '09:00'}
                     </div>
-                    <div>
-                      <div className="text-xs font-semibold text-slate-900">{cls.subject_name}</div>
-                      <div className="text-[11px] text-slate-500">{cls.subject_code} &bull; {cls.faculty_name}</div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-900 truncate">{cls.subject_name}</div>
+                      <div className="text-[11px] text-slate-500 truncate">{cls.subject_code} &bull; {cls.faculty_name}</div>
                     </div>
                   </div>
-                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 self-start sm:self-auto shrink-0">
                     Room {cls.room}
                   </span>
                 </div>

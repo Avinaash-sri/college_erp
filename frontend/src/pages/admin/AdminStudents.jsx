@@ -150,12 +150,12 @@ export default function AdminStudents() {
           <p className="text-xs text-slate-500 mt-0.5">Enroll new students, configure registered parent alerts, and manage academic records</p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={handleRecalculateCGPA}
             disabled={recalculating}
-            className="inline-flex items-center space-x-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-semibold text-xs hover:bg-blue-100 transition-colors shadow-2xs cursor-pointer"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center space-x-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-semibold text-xs hover:bg-blue-100 transition-colors shadow-2xs cursor-pointer"
             title="Recalculate & store CGPA = sum(GP * Credits) / sum(Credits) in DB"
           >
             <GraduationCap className="w-4 h-4 text-blue-600" />
@@ -165,7 +165,7 @@ export default function AdminStudents() {
           <button
             type="button"
             onClick={handleOpenAdd}
-            className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-blue-700 text-white font-semibold text-xs hover:bg-blue-800 transition-colors shadow-2xs cursor-pointer"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center space-x-2 px-4 py-2 rounded-lg bg-blue-700 text-white font-semibold text-xs hover:bg-blue-800 transition-colors shadow-2xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Enroll New Student</span>

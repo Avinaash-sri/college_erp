@@ -135,15 +135,23 @@ def recalculate_all_cgpa(admin: models.User = Depends(get_logged_in_admin), db: 
 
 @router.post("/students")
 def create_student(payload: schemas.StudentCreate, admin: models.User = Depends(get_logged_in_admin), db: Session = Depends(get_db)):
+    reg_clean = payload.reg_no.strip().upper() if payload.reg_no else ""
+    email_clean = payload.email.strip().lower() if payload.email else ""
+
+    if not reg_clean:
+        raise HTTPException(status_code=400, detail="Registration number is required and cannot be empty.")
+    if not email_clean:
+        raise HTTPException(status_code=400, detail="Email is required and cannot be empty.")
+
     # Check duplicate email or reg_no
-    if db.query(models.User).filter(models.User.email == payload.email).first():
+    if db.query(models.User).filter(models.User.email == email_clean).first():
         raise HTTPException(status_code=400, detail="User with this email already exists")
-    if db.query(models.Student).filter(models.Student.reg_no == payload.reg_no).first():
-        raise HTTPException(status_code=400, detail="Student with this Register Number already exists")
+    if db.query(models.Student).filter(models.Student.reg_no == reg_clean).first():
+        raise HTTPException(status_code=400, detail="This registration number is already registered. Please log in or contact the administrator.")
 
     # Create User
     user = models.User(
-        email=payload.email,
+        email=email_clean,
         hashed_password=get_password_hash(payload.password or "student123"),
         role="student",
         is_active=True
@@ -154,19 +162,41 @@ def create_student(payload: schemas.StudentCreate, admin: models.User = Depends(
     # Create Student
     student = models.Student(
         user_id=user.id,
-        reg_no=payload.reg_no,
-        name=payload.name,
-        email=payload.email,
-        phone=payload.phone,
+        reg_no=reg_clean,
+        name=payload.name.strip() if payload.name else "Student",
+        email=email_clean,
+        phone=payload.phone.strip() if payload.phone else None,
         department_id=payload.department_id,
         semester=payload.semester,
-        section=payload.section,
-        parent_name=payload.parent_name,
-        parent_email=payload.parent_email,
-        address=payload.address
+        section=payload.section.strip().upper() if payload.section else "A",
+        parent_name=payload.parent_name.strip() if payload.parent_name else "Guardian",
+        parent_email=payload.parent_email.strip().lower() if payload.parent_email else f"parent.{reg_clean.lower()}@gmail.com",
+        address=payload.address.strip() if payload.address else None
     )
     db.add(student)
-    db.commit()
+    db.flush()
+
+    # Create ParentContact record
+    parent_contact = models.ParentContact(
+        student_id=student.id,
+        name=payload.parent_name.strip() if payload.parent_name else "Guardian",
+        email=payload.parent_email.strip().lower() if payload.parent_email else f"parent.{reg_clean.lower()}@gmail.com",
+        phone=payload.phone.strip() if payload.phone else None,
+        relationship_type="Parent",
+        is_primary=True
+    )
+    db.add(parent_contact)
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        err_str = str(e).lower()
+        if "reg_no" in err_str:
+            raise HTTPException(status_code=400, detail="This registration number is already registered. Please log in or contact the administrator.")
+        elif "email" in err_str:
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+        raise HTTPException(status_code=400, detail="Failed to create student due to a database constraint violation.")
 
     return {"status": "success", "message": "Student created successfully", "id": student.id}
 
@@ -219,13 +249,21 @@ def get_all_faculty(admin: models.User = Depends(get_logged_in_admin), db: Sessi
 
 @router.post("/faculty")
 def create_faculty(payload: schemas.FacultyCreate, admin: models.User = Depends(get_logged_in_admin), db: Session = Depends(get_db)):
-    if db.query(models.User).filter(models.User.email == payload.email).first():
+    emp_clean = payload.emp_id.strip().upper() if payload.emp_id else ""
+    email_clean = payload.email.strip().lower() if payload.email else ""
+
+    if not emp_clean:
+        raise HTTPException(status_code=400, detail="Employee ID is required and cannot be empty.")
+    if not email_clean:
+        raise HTTPException(status_code=400, detail="Email is required and cannot be empty.")
+
+    if db.query(models.User).filter(models.User.email == email_clean).first():
         raise HTTPException(status_code=400, detail="User with this email already exists")
-    if db.query(models.Faculty).filter(models.Faculty.emp_id == payload.emp_id).first():
-        raise HTTPException(status_code=400, detail="Faculty with this Employee ID already exists")
+    if db.query(models.Faculty).filter(models.Faculty.emp_id == emp_clean).first():
+        raise HTTPException(status_code=400, detail="This employee ID is already registered. Please check or contact the administrator.")
 
     user = models.User(
-        email=payload.email,
+        email=email_clean,
         hashed_password=get_password_hash(payload.password or "faculty123"),
         role="faculty",
         is_active=True
@@ -235,15 +273,25 @@ def create_faculty(payload: schemas.FacultyCreate, admin: models.User = Depends(
 
     faculty = models.Faculty(
         user_id=user.id,
-        emp_id=payload.emp_id,
-        name=payload.name,
-        email=payload.email,
-        phone=payload.phone,
+        emp_id=emp_clean,
+        name=payload.name.strip() if payload.name else "Faculty Member",
+        email=email_clean,
+        phone=payload.phone.strip() if payload.phone else None,
         department_id=payload.department_id,
-        designation=payload.designation
+        designation=payload.designation.strip() if payload.designation else "Assistant Professor"
     )
     db.add(faculty)
-    db.commit()
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        err_str = str(e).lower()
+        if "emp_id" in err_str:
+            raise HTTPException(status_code=400, detail="This employee ID is already registered. Please check or contact the administrator.")
+        elif "email" in err_str:
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+        raise HTTPException(status_code=400, detail="Failed to create faculty due to a database constraint violation.")
 
     return {"status": "success", "message": "Faculty created successfully", "id": faculty.id}
 
@@ -568,6 +616,19 @@ def get_attendance_alert_center(admin: models.User = Depends(get_logged_in_admin
     for s in students:
         att, tot, pct, status_val, rec = get_student_overall_stats(db, s.id)
         if pct < settings.SAFE_THRESHOLD:
+            # Resolve parent name and email with ParentContact fallback
+            p_name = s.parent_name
+            p_email = s.parent_email
+            if not p_email:
+                contact = db.query(models.ParentContact).filter(models.ParentContact.student_id == s.id).first()
+                if contact:
+                    p_name = p_name or contact.name
+                    p_email = contact.email
+            if not p_email:
+                p_email = f"parent.{s.reg_no.lower()}@gmail.com"
+            if not p_name:
+                p_name = "Parent / Guardian"
+
             # Find latest alert if any
             latest_alert = db.query(models.AttendanceAlert).filter(
                 models.AttendanceAlert.student_id == s.id
@@ -577,13 +638,13 @@ def get_attendance_alert_center(admin: models.User = Depends(get_logged_in_admin
                 "student_id": s.id,
                 "name": s.name,
                 "reg_no": s.reg_no,
-                "department": s.department.name if s.department else "",
+                "department": s.department.name if s.department else "Computer Science and Engineering",
                 "attendance_pct": pct,
                 "attended_classes": att,
                 "total_classes": tot,
                 "risk_level": status_val,
-                "parent_name": s.parent_name,
-                "parent_email": s.parent_email,
+                "parent_name": p_name,
+                "parent_email": p_email,
                 "recovery_classes": rec,
                 "last_alert_id": latest_alert.id if latest_alert else None,
                 "last_alert_date": latest_alert.sent_at.isoformat() if latest_alert else "Never",
@@ -808,7 +869,7 @@ def test_smtp_endpoint(
     admin: models.User = Depends(get_logged_in_admin),
     db: Session = Depends(get_db)
 ):
-    target_email = payload.to_email.strip() if payload.to_email else admin.email
+    target_email = (payload.to_email or payload.recipient_email or admin.email or "examplecollegeerp@gmail.com").strip()
     result = test_smtp_connection(to_email=target_email, db=db)
     return result
 

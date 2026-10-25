@@ -52,15 +52,20 @@ def register_student(reg_data: schemas.StudentRegisterRequest, db: Session = Dep
     Security: Role is hardcoded to 'student' to strictly prevent privilege escalation.
     Creates isolated student account without copied demo data.
     """
-    email_clean = reg_data.email.strip().lower()
-    reg_clean = reg_data.reg_no.strip().upper()
+    email_clean = reg_data.email.strip().lower() if reg_data.email else ""
+    reg_clean = reg_data.reg_no.strip().upper() if reg_data.reg_no else ""
+
+    if not reg_clean:
+        raise HTTPException(status_code=400, detail="Registration number is required and cannot be empty.")
+    if not email_clean:
+        raise HTTPException(status_code=400, detail="Email is required and cannot be empty.")
 
     # 1. Validation: Existing email / reg_no
     if db.query(models.User).filter(models.User.email == email_clean).first():
         raise HTTPException(status_code=400, detail="An account with this email address already exists.")
 
     if db.query(models.Student).filter(models.Student.reg_no == reg_clean).first():
-        raise HTTPException(status_code=400, detail="A student with this Register Number already exists.")
+        raise HTTPException(status_code=400, detail="This registration number is already registered. Please log in or contact the administrator.")
 
     # Validate department exists
     dept = db.query(models.Department).filter(models.Department.id == reg_data.department_id).first()
@@ -128,7 +133,16 @@ def register_student(reg_data: schemas.StudentRegisterRequest, db: Session = Dep
     )
     db.add(welcome_notif)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        err_str = str(e).lower()
+        if "reg_no" in err_str:
+            raise HTTPException(status_code=400, detail="This registration number is already registered. Please log in or contact the administrator.")
+        elif "email" in err_str:
+            raise HTTPException(status_code=400, detail="An account with this email address already exists.")
+        raise HTTPException(status_code=400, detail="Registration could not be completed due to a database constraint violation.")
 
     # 7. Auto-login token
     access_token = create_access_token(
@@ -277,25 +291,25 @@ def get_demo_accounts():
         {
             "role": "student",
             "label": "Student - Safe Standing (82%)",
-            "description": "Aarav Sharma (21CS101) - Attendance Safe, normal status",
-            "email": "aarav.sharma@student.edu",
+            "description": "Arun Kumar (21CS101) - Attendance Safe, normal status",
+            "email": "arun@college.edu",
             "password": "student123",
-            "name": "Aarav Sharma"
+            "name": "Arun Kumar"
         },
         {
             "role": "student",
             "label": "Student - Warning Standing (68%)",
-            "description": "Ananya Iyer (21CS104) - Attendance Warning, parent alert logged",
-            "email": "ananya.iyer@student.edu",
+            "description": "Pooja Sundaram (21CS104) - Attendance Warning, parent alert logged",
+            "email": "pooja@college.edu",
             "password": "student123",
-            "name": "Ananya Iyer"
+            "name": "Pooja Sundaram"
         },
         {
             "role": "student",
             "label": "Student - High Risk (58%)",
-            "description": "Vikram Singh (21CS105) - Attendance High Risk (<65%), active shortage",
-            "email": "vikram.singh@student.edu",
+            "description": "Sanjay Kumar (21CS105) - Attendance High Risk (<65%), active shortage",
+            "email": "sanjay@college.edu",
             "password": "student123",
-            "name": "Vikram Singh"
+            "name": "Sanjay Kumar"
         }
     ]

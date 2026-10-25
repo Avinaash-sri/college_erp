@@ -82,62 +82,62 @@ def seed_database(db: Session):
     db.add_all(subjects)
     db.flush()
 
-    # 5. Students data specification:
-    # Aarav: 82% (Safe)
-    # Priya: 76% (Safe)
-    # Rohan: 71% (Warning)
-    # Ananya: 68% (Warning)
-    # Vikram: 58% (High Risk)
+    # 5. Students data specification (Chennai Students):
+    # Arun Kumar: 82% (Safe)
+    # Nivetha S: 76% (Safe)
+    # Vigneshwaran R: 71% (Warning)
+    # Pooja Sundaram: 68% (Warning)
+    # Sanjay Kumar: 58% (High Risk)
     student_specs = [
         {
-            "name": "Aarav Sharma",
+            "name": "Arun Kumar",
             "reg_no": "21CS101",
-            "email": "aarav.sharma@student.edu",
-            "phone": "+91 98111 22334",
-            "parent_name": "Ramesh Sharma",
-            "parent_email": "ramesh.sharma@parent.example.com",
+            "email": "arun@college.edu",
+            "phone": "9841010001",
+            "parent_name": "Kumaravel S",
+            "parent_email": "kumaravel.s@gmail.com",
             "target_pct": 82.0,
-            "address": "42 Green Valley, Tech Park Road, Bengaluru"
+            "address": "Chennai, Tamil Nadu"
         },
         {
-            "name": "Priya Patel",
+            "name": "Nivetha S",
             "reg_no": "21CS102",
-            "email": "priya.patel@student.edu",
-            "phone": "+91 98222 33445",
-            "parent_name": "Suresh Patel",
-            "parent_email": "suresh.patel@parent.example.com",
+            "email": "nivetha@college.edu",
+            "phone": "9841020002",
+            "parent_name": "Sundaramorthy K",
+            "parent_email": "sundar.k@gmail.com",
             "target_pct": 76.0,
-            "address": "15 Orchid Towers, Indiranagar, Bengaluru"
+            "address": "Chennai, Tamil Nadu"
         },
         {
-            "name": "Rohan Verma",
+            "name": "Vigneshwaran R",
             "reg_no": "21CS103",
-            "email": "rohan.verma@student.edu",
-            "phone": "+91 98333 44556",
-            "parent_name": "Alok Verma",
-            "parent_email": "alok.verma@parent.example.com",
+            "email": "vignesh.r@college.edu",
+            "phone": "9841030003",
+            "parent_name": "Ramakrishnan S",
+            "parent_email": "ramki.s@gmail.com",
             "target_pct": 71.0,
-            "address": "88 Palm Grove, Whitefield, Bengaluru"
+            "address": "Chennai, Tamil Nadu"
         },
         {
-            "name": "Ananya Iyer",
+            "name": "Pooja Sundaram",
             "reg_no": "21CS104",
-            "email": "ananya.iyer@student.edu",
-            "phone": "+91 98444 55667",
-            "parent_name": "K. S. Iyer",
-            "parent_email": "k.iyer@parent.example.com",
+            "email": "pooja@college.edu",
+            "phone": "9841040004",
+            "parent_name": "Sundaram V",
+            "parent_email": "sundaram.v@gmail.com",
             "target_pct": 68.0,
-            "address": "204 Heritage Enclave, Koramangala, Bengaluru"
+            "address": "Chennai, Tamil Nadu"
         },
         {
-            "name": "Vikram Singh",
+            "name": "Sanjay Kumar",
             "reg_no": "21CS105",
-            "email": "vikram.singh@student.edu",
-            "phone": "+91 98555 66778",
-            "parent_name": "Mahendra Singh",
-            "parent_email": "mahendra.singh@parent.example.com",
+            "email": "sanjay@college.edu",
+            "phone": "9841050005",
+            "parent_name": "Mohan Kumar R",
+            "parent_email": "mohan.r@gmail.com",
             "target_pct": 58.0,
-            "address": "77 Silver Springs, Electronic City, Bengaluru"
+            "address": "Chennai, Tamil Nadu"
         }
     ]
 
@@ -216,7 +216,7 @@ def seed_database(db: Session):
 
     db.flush()
 
-    # 7. Pre-seed Attendance Alerts for Low-Attendance Students (Vikram & Ananya)
+    # 7. Pre-seed Attendance Alerts for Low-Attendance Students (Sanjay & Pooja)
     for student, user, spec in created_students:
         if spec["target_pct"] < 75.0:
             rec_classes = calculate_recovery_classes(

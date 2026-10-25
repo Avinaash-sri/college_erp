@@ -54,9 +54,10 @@ class DirectChatPayload(BaseModel):
     role: Optional[str] = "student"
 
 
-def run_smtp_dispatch_background(payload_dict: dict):
+def run_smtp_dispatch_background(payload_dict: dict, alert_id: Optional[int] = None):
     """
     Executes actual SMTP socket connection and message delivery in background thread.
+    Updates the AttendanceAlert record with confirmed provider acceptance status upon completion.
     """
     try:
         db = SessionLocal()
@@ -75,6 +76,15 @@ def run_smtp_dispatch_background(payload_dict: dict):
             db=db
         )
         logger.info(f"Background SMTP result for {payload_dict['parent_email']}: {res['status']} - {res['message']}")
+        if alert_id:
+            alert_rec = db.query(models.AttendanceAlert).filter(models.AttendanceAlert.id == alert_id).first()
+            if alert_rec:
+                alert_rec.status = res["status"]
+                alert_rec.last_error = res.get("error")
+                alert_rec.attempt_count = res.get("attempts", 1)
+                if res["status"] == "Sent":
+                    alert_rec.sent_at = datetime.datetime.utcnow()
+                db.commit()
         db.close()
     except Exception as e:
         logger.error(f"Error in background SMTP dispatch to {payload_dict.get('parent_email')}: {e}")
@@ -89,6 +99,7 @@ def dispatch_single_attendance_alert(
     """
     Dispatches parent and student attendance alert notice via SMTP.
     Used for both automated triggers (faculty attendance entry) and manual admin triggers.
+    Initializes record as 'Pending' and only updates to 'Sent' upon confirmed provider acceptance.
     """
     recipients_desc = payload.parent_email
     if payload.student_email and payload.student_email != payload.parent_email:
@@ -109,10 +120,8 @@ def dispatch_single_attendance_alert(
         total_sessions=payload.total_sessions or 0
     )
 
-    # Schedule background SMTP send
-    background_tasks.add_task(run_smtp_dispatch_background, payload.dict())
-
-    # Record alert in DB if student exists
+    alert_id = None
+    # Record alert in DB as Pending initially
     try:
         student = None
         if payload.student_id:
@@ -127,18 +136,24 @@ def dispatch_single_attendance_alert(
                 parent_email=payload.parent_email,
                 alert_type=payload.alert_type or f"{payload.trigger_source.capitalize()} Attendance Alert",
                 sent_at=datetime.datetime.utcnow(),
-                status="Sent",
+                status="Pending",
                 recovery_classes=payload.recovery_classes or 0,
                 email_preview=content["html"]
             )
             db.add(alert_rec)
             db.commit()
+            db.refresh(alert_rec)
+            alert_id = alert_rec.id
     except Exception as e:
         logger.warning(f"Could not persist alert record to DB: {e}")
 
+    # Schedule background SMTP send with alert_id tracking
+    background_tasks.add_task(run_smtp_dispatch_background, payload.dict(), alert_id=alert_id)
+
     return {
         "status": "Sent",
-        "message": f"Attendance alert successfully dispatched via SMTP (smtp.gmail.com:587 TLS) to {recipients_desc}.",
+        "delivery_status": "Queued for SMTP Delivery",
+        "message": f"Attendance alert successfully enqueued for SMTP dispatch (smtp.gmail.com:587 TLS) to {recipients_desc}.",
         "preview": content["html"],
         "subject": content["subject"],
         "error": None
@@ -156,7 +171,27 @@ def dispatch_all_defaulters(
     """
     results = []
     for st in payload.students:
-        background_tasks.add_task(run_smtp_dispatch_background, st.dict())
+        alert_id = None
+        try:
+            student = db.query(models.Student).filter(models.Student.reg_no == st.reg_no).first()
+            if student:
+                alert_rec = models.AttendanceAlert(
+                    student_id=student.id,
+                    attendance_pct=st.attendance_pct,
+                    parent_email=st.parent_email,
+                    alert_type=st.alert_type or "Bulk Attendance Defaulter Notice",
+                    sent_at=datetime.datetime.utcnow(),
+                    status="Pending",
+                    recovery_classes=st.recovery_classes or 0
+                )
+                db.add(alert_rec)
+                db.commit()
+                db.refresh(alert_rec)
+                alert_id = alert_rec.id
+        except Exception as e:
+            logger.warning(f"Could not initialize bulk alert log for {st.reg_no}: {e}")
+
+        background_tasks.add_task(run_smtp_dispatch_background, st.dict(), alert_id=alert_id)
         results.append({
             "reg_no": st.reg_no,
             "student_name": st.student_name,

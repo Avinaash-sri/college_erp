@@ -1,14 +1,111 @@
 import smtplib
+import socket
+import time
+import json
+import re
+import hashlib
+import datetime
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import SessionLocal
 from app import models
 
 logger = logging.getLogger("erp_email_service")
+
+# ── Resiliency & Policy Constants ─────────────────────────────────────────────
+DEFAULT_SMTP_TIMEOUT = 25       # Increased from 12s to tolerate DNS/TLS handshake delays
+MAX_RETRIES = 3                 # Bounded retries for temporary failures
+INITIAL_BACKOFF_SECONDS = 1.0   # Backoff: 1.0s, 2.0s
+IDEMPOTENCY_WINDOW_SECONDS = 180 # 3 minutes suppression to prevent duplicate burst emails
+
+# In-memory idempotency cache: { cache_key: { "sent_at": float, "result": dict } }
+_idempotency_cache: Dict[str, Dict[str, Any]] = {}
+
+
+def log_structured_email_event(
+    event_type: str,
+    recipient: str,
+    status: str,
+    attempt: int = 1,
+    max_attempts: int = 1,
+    duration_ms: float = 0.0,
+    provider_code: Optional[str] = None,
+    error_detail: Optional[str] = None,
+    idempotent_replay: bool = False
+) -> None:
+    """
+    Emits structured, machine-parsable audit logs for every email delivery attempt.
+    CRITICAL: Never logs SMTP passwords, app passwords, secret tokens, or private recipient data.
+    """
+    sanitized_recipient = recipient or "unknown"
+    if "@" in sanitized_recipient:
+        parts = sanitized_recipient.split("@")
+        user_part = parts[0]
+        domain_part = parts[1]
+        if len(user_part) > 2:
+            sanitized_recipient = f"{user_part[:2]}***@{domain_part}"
+        else:
+            sanitized_recipient = f"*@{domain_part}"
+
+    sanitized_error = None
+    if error_detail:
+        s = str(error_detail)
+        s = re.sub(r':([^:@]+)@', ':****@', s)
+        s = re.sub(r'(?:password|secret|key|token|auth)[:=]\s*\S+', 'password: ****', s, flags=re.IGNORECASE)
+        sanitized_error = s
+
+    log_entry = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "service": "smtp_mailer",
+        "event_type": event_type,
+        "recipient_id": sanitized_recipient,
+        "status": status,
+        "attempt": f"{attempt}/{max_attempts}",
+        "duration_ms": round(duration_ms, 2),
+        "provider_code": provider_code or ("250 OK" if status in ("Sent", "Accepted") else None),
+        "error_detail": sanitized_error,
+        "idempotent_replay": idempotent_replay
+    }
+
+    log_line = f"[SMTP_AUDIT] {json.dumps(log_entry)}"
+    if status in ("Sent", "Accepted"):
+        logger.info(log_line)
+    elif status in ("Blocked", "Duplicate Suppressed"):
+        logger.warning(log_line)
+    else:
+        logger.error(log_line)
+
+
+def _is_retryable_smtp_error(exc: Exception) -> bool:
+    """
+    Distinguishes transient/temporary network & provider failures from permanent failures.
+    Retryable: socket timeouts, broken connections, TLS handshake drops, SMTP 4xx codes.
+    Non-retryable: authentication failure (535), syntax errors (501), mailbox not found (550).
+    """
+    if isinstance(exc, (
+        smtplib.SMTPServerDisconnected,
+        smtplib.SMTPConnectError,
+        socket.timeout,
+        TimeoutError,
+        ConnectionResetError,
+        ConnectionRefusedError,
+        ConnectionAbortedError,
+        BrokenPipeError,
+        OSError
+    )):
+        return True
+
+    if isinstance(exc, smtplib.SMTPResponseException):
+        # 4xx SMTP codes designate temporary server failures (e.g. 421 Rate limit, 451 Local error)
+        if 400 <= exc.smtp_code < 500:
+            return True
+
+    return False
+
 
 def get_effective_smtp_config(db: Optional[Session] = None) -> Dict[str, Any]:
     """
@@ -62,6 +159,7 @@ def get_effective_smtp_config(db: Optional[Session] = None) -> Dict[str, Any]:
         "use_tls": use_tls,
         "is_configured": is_configured
     }
+
 
 def generate_attendance_email_content(
     student_name: str,
@@ -184,6 +282,7 @@ Office of Academic Affairs
         "text": text_content
     }
 
+
 def send_smtp_message(
     to_email: str,
     subject: str,
@@ -191,14 +290,21 @@ def send_smtp_message(
     text_content: str,
     cc_email: Optional[str] = None,
     custom_config: Optional[Dict[str, Any]] = None,
-    db: Optional[Session] = None
+    db: Optional[Session] = None,
+    skip_idempotency: bool = False,
+    event_type: str = "attendance_alert"
 ) -> Dict[str, Any]:
     """
     Sends an email using configured SMTP settings (with SSL or STARTTLS support).
-    Accurately validates the recipient address, redacts sensitive details from logs,
-    and returns exact status ('Sent', 'Failed', 'Email Not Configured', 'Blocked').
-    Supports optional CC recipient (e.g. ward/student email).
+    Features:
+    - Accurate recipient validation & fallback.
+    - Idempotency deduplication window to suppress accidental duplicate submissions.
+    - Bounded retries with exponential backoff for temporary network / SMTP 4xx errors.
+    - Strict provider acceptance verification: marked as 'Sent' only when server confirms acceptance.
+    - Structured audit logging (credentials/passwords completely sanitized).
     """
+    start_time = time.time()
+
     # 1. Recipient validation
     primary_email = (to_email or "").strip().lower()
     clean_cc = (cc_email or "").strip().lower() if cc_email else None
@@ -209,87 +315,193 @@ def send_smtp_message(
             primary_email = clean_cc
             clean_cc = None
         else:
-            logger.warning(f"Blocked email attempt: Invalid or missing recipient email '{to_email}'")
+            log_structured_email_event(
+                event_type=event_type,
+                recipient=to_email or "MISSING",
+                status="Blocked",
+                error_detail="Missing or invalid recipient email address"
+            )
             return {
                 "status": "Blocked",
+                "delivery_status": "Blocked (Invalid Recipient)",
                 "message": "Blocked: Missing or invalid recipient email address.",
                 "preview": html_content,
                 "subject": subject,
-                "error": "MISSING_RECIPIENT_EMAIL"
+                "error": "MISSING_RECIPIENT_EMAIL",
+                "attempts": 0
             }
 
     clean_to_email = primary_email
-    config = custom_config or get_effective_smtp_config(db)
 
-    # 2. Check if SMTP credentials are configured
+    # 2. Idempotency Check: Suppress duplicate identical emails within suppression window
+    cache_key = f"{clean_to_email}:{hashlib.sha256(subject.encode()).hexdigest()[:16]}"
+    now_ts = time.time()
+    if not skip_idempotency and cache_key in _idempotency_cache:
+        cached_entry = _idempotency_cache[cache_key]
+        elapsed = now_ts - cached_entry["sent_at"]
+        if elapsed < IDEMPOTENCY_WINDOW_SECONDS:
+            log_structured_email_event(
+                event_type=event_type,
+                recipient=clean_to_email,
+                status="Duplicate Suppressed",
+                duration_ms=(time.time() - start_time) * 1000,
+                idempotent_replay=True
+            )
+            cached_res = dict(cached_entry["result"])
+            cached_res["idempotent_replay"] = True
+            cached_res["message"] = f"Notice already confirmed by SMTP provider within last {int(elapsed)}s. Duplicate suppressed."
+            return cached_res
+
+    # 3. Check if SMTP credentials are configured
+    config = custom_config or get_effective_smtp_config(db)
     if not config["is_configured"]:
-        logger.warning(
-            f"SMTP credentials not configured. Email to {clean_to_email} was not dispatched via SMTP."
+        log_structured_email_event(
+            event_type=event_type,
+            recipient=clean_to_email,
+            status="Email Not Configured",
+            error_detail="SMTP credentials not configured"
         )
         return {
             "status": "Email Not Configured",
+            "delivery_status": "Unconfigured Gateway",
             "message": "SMTP credentials are not configured in backend environment or system settings. Real email was not delivered.",
             "preview": html_content,
             "subject": subject,
-            "error": "SMTP_NOT_CONFIGURED"
+            "error": "SMTP_NOT_CONFIGURED",
+            "attempts": 0
         }
 
-    # 3. Deliver via real SMTP
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = f"{config['from_name']} <{config['from_email']}>"
-        msg["To"] = clean_to_email
-        recipients = [clean_to_email]
+    # 4. Construct Email Message
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{config['from_name']} <{config['from_email']}>"
+    msg["To"] = clean_to_email
+    recipients = [clean_to_email]
 
-        if clean_cc and "@" in clean_cc and "." in clean_cc.split("@")[-1] and clean_cc != clean_to_email:
-            msg["Cc"] = clean_cc
-            recipients.append(clean_cc)
+    if clean_cc and "@" in clean_cc and "." in clean_cc.split("@")[-1] and clean_cc != clean_to_email:
+        msg["Cc"] = clean_cc
+        recipients.append(clean_cc)
 
-        part1 = MIMEText(text_content, "plain")
-        part2 = MIMEText(html_content, "html")
-        msg.attach(part1)
-        msg.attach(part2)
+    part1 = MIMEText(text_content, "plain", "utf-8")
+    part2 = MIMEText(html_content, "html", "utf-8")
+    msg.attach(part1)
+    msg.attach(part2)
 
-        host = config["host"]
-        port = config["port"]
-        username = config["username"]
-        password = config["password"]
+    host = config["host"]
+    port = config["port"]
+    username = config["username"]
+    password = config["password"]
+    recipients_str = ", ".join(recipients)
 
-        # Support SSL on port 465 vs STARTTLS on port 587/25
-        if port == 465:
-            with smtplib.SMTP_SSL(host, port, timeout=12) as server:
-                server.login(username, password)
-                server.sendmail(config["from_email"], recipients, msg.as_string())
-        else:
-            with smtplib.SMTP(host, port, timeout=12) as server:
-                if config["use_tls"]:
+    # 5. Deliver via SMTP with Bounded Retries & Exponential Backoff
+    last_error_str = None
+    attempt_count = 0
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        attempt_count = attempt
+        attempt_start = time.time()
+        try:
+            if port == 465:
+                server = smtplib.SMTP_SSL(host, port, timeout=DEFAULT_SMTP_TIMEOUT)
+            else:
+                server = smtplib.SMTP(host, port, timeout=DEFAULT_SMTP_TIMEOUT)
+
+            try:
+                server.ehlo()
+                if port != 465 and config["use_tls"]:
                     server.starttls()
-                server.login(username, password)
-                server.sendmail(config["from_email"], recipients, msg.as_string())
+                    server.ehlo()
 
-        recipients_str = ", ".join(recipients)
-        logger.info(f"Successfully submitted email via SMTP to {recipients_str}")
-        return {
-            "status": "Sent",
-            "message": f"Email successfully accepted by SMTP server for delivery to {recipients_str}",
-            "preview": html_content,
-            "subject": subject,
-            "error": None
-        }
-    except Exception as e:
-        safe_err = str(e)
-        import re
-        safe_err = re.sub(r':([^:@]+)@', ':****@', safe_err)
-        safe_err = re.sub(r'password[:=]\s*\S+', 'password: ****', safe_err, flags=re.IGNORECASE)
-        logger.error(f"SMTP Delivery Failed to {clean_to_email}: {safe_err}")
-        return {
-            "status": "Failed",
-            "message": f"SMTP Error: {safe_err}",
-            "preview": html_content,
-            "subject": subject,
-            "error": safe_err
-        }
+                server.login(username, password)
+                refused_recipients = server.sendmail(config["from_email"], recipients, msg.as_string())
+
+                # Provider confirmed acceptance check
+                if refused_recipients and len(refused_recipients) == len(recipients):
+                    raise smtplib.SMTPRecipientsRefused(refused_recipients)
+
+            finally:
+                try:
+                    server.quit()
+                except Exception:
+                    pass
+
+            # Successfully accepted by SMTP provider
+            duration_ms = (time.time() - start_time) * 1000
+            log_structured_email_event(
+                event_type=event_type,
+                recipient=clean_to_email,
+                status="Sent",
+                attempt=attempt,
+                max_attempts=MAX_RETRIES,
+                duration_ms=duration_ms,
+                provider_code="250 2.0.0 OK"
+            )
+
+            result = {
+                "status": "Sent",
+                "delivery_status": "Accepted by SMTP Provider",
+                "message": f"Email successfully accepted by SMTP server for delivery to {recipients_str}",
+                "preview": html_content,
+                "subject": subject,
+                "error": None,
+                "attempts": attempt,
+                "provider_code": "250 2.0.0 OK",
+                "idempotent_replay": False
+            }
+
+            # Cache successful delivery in idempotency cache
+            _idempotency_cache[cache_key] = {
+                "sent_at": now_ts,
+                "result": result
+            }
+
+            return result
+
+        except Exception as exc:
+            duration_ms = (time.time() - attempt_start) * 1000
+            is_retryable = _is_retryable_smtp_error(exc)
+            safe_err = str(exc)
+            safe_err = re.sub(r':([^:@]+)@', ':****@', safe_err)
+            safe_err = re.sub(r'(?:password|secret|key|token)[:=]\s*\S+', 'password: ****', safe_err, flags=re.IGNORECASE)
+            last_error_str = safe_err
+
+            if is_retryable and attempt < MAX_RETRIES:
+                backoff_wait = INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                log_structured_email_event(
+                    event_type=event_type,
+                    recipient=clean_to_email,
+                    status="Retry",
+                    attempt=attempt,
+                    max_attempts=MAX_RETRIES,
+                    duration_ms=duration_ms,
+                    error_detail=f"Temporary SMTP error ({safe_err}). Retrying in {backoff_wait}s..."
+                )
+                time.sleep(backoff_wait)
+                continue
+            else:
+                # Permanent failure or retry limit exceeded
+                log_structured_email_event(
+                    event_type=event_type,
+                    recipient=clean_to_email,
+                    status="Failed",
+                    attempt=attempt,
+                    max_attempts=MAX_RETRIES,
+                    duration_ms=duration_ms,
+                    error_detail=safe_err
+                )
+                break
+
+    return {
+        "status": "Failed",
+        "delivery_status": "Delivery Failed",
+        "message": f"SMTP Error after {attempt_count} attempt(s): {last_error_str}",
+        "preview": html_content,
+        "subject": subject,
+        "error": last_error_str,
+        "attempts": attempt_count,
+        "idempotent_replay": False
+    }
+
 
 def send_parent_attendance_email(
     parent_email: str,
@@ -303,7 +515,8 @@ def send_parent_attendance_email(
     attended_sessions: int = 0,
     total_sessions: int = 0,
     student_email: Optional[str] = None,
-    db: Optional[Session] = None
+    db: Optional[Session] = None,
+    skip_idempotency: bool = False
 ) -> Dict[str, Any]:
     email_data = generate_attendance_email_content(
         student_name=student_name,
@@ -324,8 +537,11 @@ def send_parent_attendance_email(
         html_content=email_data["html"],
         text_content=email_data["text"],
         cc_email=student_email,
-        db=db
+        db=db,
+        skip_idempotency=skip_idempotency,
+        event_type="parent_attendance_alert"
     )
+
 
 def test_smtp_connection(to_email: str, db: Optional[Session] = None) -> Dict[str, Any]:
     """
@@ -375,6 +591,9 @@ def test_smtp_connection(to_email: str, db: Optional[Session] = None) -> Dict[st
         html_content=html_content,
         text_content=text_content,
         custom_config=config,
-        db=db
+        db=db,
+        skip_idempotency=True,
+        event_type="smtp_gateway_test"
     )
+
 

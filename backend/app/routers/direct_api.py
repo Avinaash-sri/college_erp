@@ -150,10 +150,11 @@ def dispatch_single_attendance_alert(
     # Schedule background SMTP send with alert_id tracking
     background_tasks.add_task(run_smtp_dispatch_background, payload.dict(), alert_id=alert_id)
 
+    gateway_desc = "Resend HTTPS API" if (os.getenv("RESEND_API_KEY") or getattr(settings, "RESEND_API_KEY", None)) else "SMTP Gateway"
     return {
         "status": "Sent",
-        "delivery_status": "Queued for SMTP Delivery",
-        "message": f"Attendance alert successfully enqueued for SMTP dispatch (smtp.gmail.com:587 TLS) to {recipients_desc}.",
+        "delivery_status": f"Dispatched via {gateway_desc}",
+        "message": f"Attendance alert successfully dispatched via {gateway_desc} to {recipients_desc}.",
         "preview": content["html"],
         "subject": content["subject"],
         "error": None

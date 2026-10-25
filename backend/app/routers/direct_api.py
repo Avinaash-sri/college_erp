@@ -29,6 +29,7 @@ class AlertDispatchPayload(BaseModel):
     recovery_classes: Optional[int] = 0
     parent_name: Optional[str] = "Parent / Guardian"
     parent_email: str
+    student_email: Optional[str] = None
     alert_type: Optional[str] = "Attendance Warning Notice"
     semester: Optional[int] = 6
     attended_sessions: Optional[int] = 0
@@ -70,6 +71,7 @@ def run_smtp_dispatch_background(payload_dict: dict):
             semester=payload_dict.get("semester") or 6,
             attended_sessions=payload_dict.get("attended_sessions") or 0,
             total_sessions=payload_dict.get("total_sessions") or 0,
+            student_email=payload_dict.get("student_email"),
             db=db
         )
         logger.info(f"Background SMTP result for {payload_dict['parent_email']}: {res['status']} - {res['message']}")
@@ -85,10 +87,14 @@ def dispatch_single_attendance_alert(
     db: Session = Depends(get_db)
 ):
     """
-    Dispatches parent attendance alert notice via SMTP.
+    Dispatches parent and student attendance alert notice via SMTP.
     Used for both automated triggers (faculty attendance entry) and manual admin triggers.
     """
-    logger.info(f"Enqueueing attendance alert ({payload.trigger_source}) for {payload.student_name} ({payload.reg_no}) to {payload.parent_email}")
+    recipients_desc = payload.parent_email
+    if payload.student_email and payload.student_email != payload.parent_email:
+        recipients_desc += f" & {payload.student_email}"
+
+    logger.info(f"Enqueueing attendance alert ({payload.trigger_source}) for {payload.student_name} ({payload.reg_no}) to {recipients_desc}")
 
     # Generate full HTML email content immediately for instant UI preview
     content = generate_attendance_email_content(
@@ -132,7 +138,7 @@ def dispatch_single_attendance_alert(
 
     return {
         "status": "Sent",
-        "message": f"Parent attendance alert successfully dispatched via SMTP (smtp.gmail.com:587 TLS) to {payload.parent_email}.",
+        "message": f"Attendance alert successfully dispatched via SMTP (smtp.gmail.com:587 TLS) to {recipients_desc}.",
         "preview": content["html"],
         "subject": content["subject"],
         "error": None

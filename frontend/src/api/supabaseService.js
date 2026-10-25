@@ -185,17 +185,17 @@ export async function fetchAuthoritativeCloudState() {
       ? subjectsRes.value.data
       : SUBJECTS;
 
-    const rawStudents = studentsRes.status === 'fulfilled' && studentsRes.value.data?.length
+    const rawStudents = studentsRes.status === 'fulfilled' && Array.isArray(studentsRes.value.data)
       ? studentsRes.value.data
-      : STUDENTS;
+      : (studentsRes.status === 'fulfilled' && studentsRes.value.data ? [studentsRes.value.data] : STUDENTS);
 
-    const rawUsers = usersRes.status === 'fulfilled' && usersRes.value.data?.length
+    const rawUsers = usersRes.status === 'fulfilled' && Array.isArray(usersRes.value.data)
       ? usersRes.value.data
-      : USERS;
+      : (usersRes.status === 'fulfilled' && usersRes.value.data ? [usersRes.value.data] : USERS);
 
-    const rawFaculty = facultyRes.status === 'fulfilled' && facultyRes.value.data?.length
+    const rawFaculty = facultyRes.status === 'fulfilled' && Array.isArray(facultyRes.value.data)
       ? facultyRes.value.data
-      : FACULTY_MEMBERS;
+      : (facultyRes.status === 'fulfilled' && facultyRes.value.data ? [facultyRes.value.data] : FACULTY_MEMBERS);
 
     const rawAttendance = attendanceRes.status === 'fulfilled'
       ? (Array.isArray(attendanceRes.value) ? attendanceRes.value : (Array.isArray(attendanceRes.value?.data) ? attendanceRes.value.data : []))
@@ -232,16 +232,18 @@ export async function fetchAuthoritativeCloudState() {
         ? (totalConducted > 0 ? Math.max(1, Math.ceil(3 * totalConducted - 4 * totalAttended)) : 4)
         : 0;
 
-      // Resolve parent details from student record or parent_contacts table with default fallback
+      // Resolve parent details: prioritize authoritative student table parent_email/parent_name, then parent_contacts, then reg_no fallback
       const pContact = rawParentContacts.find((c) => c.student_id === st.id);
-      const parentName = st.parent_name || pContact?.name || 'Parent / Guardian';
-      const parentEmail = st.parent_email || pContact?.email || (st.reg_no ? `parent.${st.reg_no.toLowerCase()}@gmail.com` : 'parent@college.edu');
+      const parentName = (st.parent_name && String(st.parent_name).trim()) || pContact?.name || 'Parent / Guardian';
+      const parentEmail = (st.parent_email && String(st.parent_email).trim()) || pContact?.email || (st.reg_no ? `parent.${st.reg_no.toLowerCase()}@gmail.com` : 'parent@college.edu');
+      const studentEmail = (st.email && String(st.email).trim()) || (st.reg_no ? `${st.reg_no.toLowerCase()}@college.edu` : 'student@college.edu');
 
       // Calculate CGPA from marks
       const cgpa = calculateStudentCGPAFromMarks(st.id, rawMarks, subjects) || parseFloat(st.cgpa) || 8.0;
 
       return {
         ...st,
+        email: studentEmail,
         parent_name: parentName,
         parent_email: parentEmail,
         department: dept.name,
@@ -545,11 +547,17 @@ export async function createStudentInSupabase(studentData) {
 export async function updateStudentInSupabase(studentId, data) {
   if (!isSupabaseConfigured) return null;
 
+  const targetId = parseInt(studentId, 10) || studentId;
+  const cleanStudentEmail = data.email ? String(data.email).trim().toLowerCase() : undefined;
+  const cleanParentEmail = data.parent_email ? String(data.parent_email).trim().toLowerCase() : undefined;
+  const cleanParentName = data.parent_name ? String(data.parent_name).trim() : undefined;
+
   const updateFields = {};
-  if (data.name !== undefined) updateFields.name = data.name;
+  if (data.name !== undefined) updateFields.name = String(data.name).trim();
+  if (cleanStudentEmail !== undefined) updateFields.email = cleanStudentEmail;
   if (data.phone !== undefined) updateFields.phone = data.phone;
-  if (data.parent_name !== undefined) updateFields.parent_name = data.parent_name;
-  if (data.parent_email !== undefined) updateFields.parent_email = data.parent_email;
+  if (cleanParentName !== undefined) updateFields.parent_name = cleanParentName;
+  if (cleanParentEmail !== undefined) updateFields.parent_email = cleanParentEmail;
   if (data.address !== undefined) updateFields.address = data.address;
   if (data.semester !== undefined) updateFields.semester = parseInt(data.semester);
   if (data.section !== undefined) updateFields.section = data.section;
@@ -558,23 +566,106 @@ export async function updateStudentInSupabase(studentId, data) {
   const { data: updated, error } = await supabase
     .from('students')
     .update(updateFields)
-    .eq('id', studentId)
+    .eq('id', targetId)
     .select()
     .single();
 
   if (error) throw error;
+
+  // 1. Authoritatively update associated user account email in users table
+  if (cleanStudentEmail && updated?.user_id) {
+    try {
+      await supabase
+        .from('users')
+        .update({ email: cleanStudentEmail, name: updateFields.name || updated.name })
+        .eq('id', updated.user_id);
+    } catch (uErr) {
+      console.warn('Notice updating student user in Supabase:', uErr);
+    }
+  }
+
+  // 2. Authoritatively sync parent_contacts table so parent alert dispatches resolve updated email
+  if (cleanParentEmail !== undefined || cleanParentName !== undefined) {
+    try {
+      const { data: existingContact } = await supabase
+        .from('parent_contacts')
+        .select('id')
+        .eq('student_id', targetId)
+        .maybeSingle();
+
+      if (existingContact) {
+        const pcUpdate = {};
+        if (cleanParentEmail !== undefined) pcUpdate.email = cleanParentEmail;
+        if (cleanParentName !== undefined) pcUpdate.name = cleanParentName;
+        await supabase.from('parent_contacts').update(pcUpdate).eq('student_id', targetId);
+      } else if (cleanParentEmail) {
+        await supabase.from('parent_contacts').insert([{
+          student_id: targetId,
+          name: cleanParentName || updated.parent_name || 'Parent / Guardian',
+          email: cleanParentEmail,
+          is_primary: true
+        }]);
+      }
+    } catch (pcErr) {
+      console.warn('Notice syncing parent_contacts in Supabase:', pcErr);
+    }
+  }
+
   return updated;
 }
 
 export async function deleteStudentInSupabase(studentId) {
   if (!isSupabaseConfigured) return null;
 
+  const targetId = parseInt(studentId, 10) || studentId;
+
+  // 1. Fetch student to obtain user_id for complete user cleanup
+  let userId = null;
+  try {
+    const { data: st } = await supabase
+      .from('students')
+      .select('id, user_id, email, reg_no')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (st) {
+      userId = st.user_id;
+    }
+  } catch (e) {
+    console.warn('Error fetching student before delete:', e);
+  }
+
+  // 2. Clean dependent relations across tables to ensure foreign keys do not block deletion
+  try { await supabase.from('parent_contacts').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('attendance_alerts').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('attendance').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('marks').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('fees').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('enrollments').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('complaints').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('leave_requests').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('assignment_submissions').delete().eq('student_id', targetId); } catch (e) {}
+  try { await supabase.from('quiz_attempts').delete().eq('student_id', targetId); } catch (e) {}
+
+  // 3. Delete student record from students table
   const { error } = await supabase
     .from('students')
     .delete()
-    .eq('id', studentId);
+    .eq('id', targetId);
 
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase delete student error:', error);
+    throw error;
+  }
+
+  // 4. Delete associated user in users table
+  if (userId) {
+    try {
+      await supabase.from('users').delete().eq('id', userId);
+    } catch (uErr) {
+      console.warn('Notice deleting associated student user:', uErr);
+    }
+  }
+
   return true;
 }
 
@@ -674,8 +765,12 @@ export async function createFacultyInSupabase(facultyData) {
 export async function updateFacultyInSupabase(facultyId, data) {
   if (!isSupabaseConfigured) return null;
 
+  const targetId = parseInt(facultyId, 10) || facultyId;
+  const cleanEmail = data.email ? String(data.email).trim().toLowerCase() : undefined;
+
   const updateFields = {};
-  if (data.name !== undefined) updateFields.name = data.name;
+  if (data.name !== undefined) updateFields.name = String(data.name).trim();
+  if (cleanEmail !== undefined) updateFields.email = cleanEmail;
   if (data.phone !== undefined) updateFields.phone = data.phone;
   if (data.designation !== undefined) updateFields.designation = data.designation;
   if (data.department_id !== undefined) updateFields.department_id = parseInt(data.department_id);
@@ -683,23 +778,71 @@ export async function updateFacultyInSupabase(facultyId, data) {
   const { data: updated, error } = await supabase
     .from('faculty')
     .update(updateFields)
-    .eq('id', facultyId)
+    .eq('id', targetId)
     .select()
     .single();
 
   if (error) throw error;
+
+  // Authoritatively update associated user account in users table
+  if (cleanEmail && updated?.user_id) {
+    try {
+      await supabase
+        .from('users')
+        .update({ email: cleanEmail, name: updateFields.name || updated.name })
+        .eq('id', updated.user_id);
+    } catch (uErr) {
+      console.warn('Notice updating faculty user in Supabase:', uErr);
+    }
+  }
+
   return updated;
 }
 
 export async function deleteFacultyInSupabase(facultyId) {
   if (!isSupabaseConfigured) return null;
 
+  const targetId = parseInt(facultyId, 10) || facultyId;
+
+  // 1. Fetch faculty to obtain user_id
+  let userId = null;
+  try {
+    const { data: fac } = await supabase
+      .from('faculty')
+      .select('id, user_id, email, emp_id')
+      .eq('id', targetId)
+      .maybeSingle();
+    if (fac) {
+      userId = fac.user_id;
+    }
+  } catch (e) {
+    console.warn('Error fetching faculty before delete:', e);
+  }
+
+  // 2. Unassign faculty from subjects and timetable so no foreign key blocks
+  try { await supabase.from('subjects').update({ faculty_id: null }).eq('faculty_id', targetId); } catch (e) {}
+  try { await supabase.from('timetable').update({ faculty_id: null }).eq('faculty_id', targetId); } catch (e) {}
+
+  // 3. Delete faculty row from faculty table
   const { error } = await supabase
     .from('faculty')
     .delete()
-    .eq('id', facultyId);
+    .eq('id', targetId);
 
-  if (error) throw error;
+  if (error) {
+    console.error('Supabase delete faculty error:', error);
+    throw error;
+  }
+
+  // 4. Delete corresponding user row in users table
+  if (userId) {
+    try {
+      await supabase.from('users').delete().eq('id', userId);
+    } catch (uErr) {
+      console.warn('Notice deleting associated faculty user:', uErr);
+    }
+  }
+
   return true;
 }
 

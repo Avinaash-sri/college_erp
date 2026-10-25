@@ -189,6 +189,7 @@ def send_smtp_message(
     subject: str,
     html_content: str,
     text_content: str,
+    cc_email: Optional[str] = None,
     custom_config: Optional[Dict[str, Any]] = None,
     db: Optional[Session] = None
 ) -> Dict[str, Any]:
@@ -196,19 +197,28 @@ def send_smtp_message(
     Sends an email using configured SMTP settings (with SSL or STARTTLS support).
     Accurately validates the recipient address, redacts sensitive details from logs,
     and returns exact status ('Sent', 'Failed', 'Email Not Configured', 'Blocked').
+    Supports optional CC recipient (e.g. ward/student email).
     """
     # 1. Recipient validation
-    if not to_email or not to_email.strip() or "@" not in to_email or "." not in to_email.split("@")[-1]:
-        logger.warning(f"Blocked email attempt: Invalid or missing parent recipient email '{to_email}'")
-        return {
-            "status": "Blocked",
-            "message": "Blocked: Missing or invalid parent recipient email address.",
-            "preview": html_content,
-            "subject": subject,
-            "error": "MISSING_PARENT_EMAIL"
-        }
+    primary_email = (to_email or "").strip().lower()
+    clean_cc = (cc_email or "").strip().lower() if cc_email else None
 
-    clean_to_email = to_email.strip().lower()
+    if not primary_email or "@" not in primary_email or "." not in primary_email.split("@")[-1]:
+        # If primary (parent) email is missing, check if student email is valid
+        if clean_cc and "@" in clean_cc and "." in clean_cc.split("@")[-1]:
+            primary_email = clean_cc
+            clean_cc = None
+        else:
+            logger.warning(f"Blocked email attempt: Invalid or missing recipient email '{to_email}'")
+            return {
+                "status": "Blocked",
+                "message": "Blocked: Missing or invalid recipient email address.",
+                "preview": html_content,
+                "subject": subject,
+                "error": "MISSING_RECIPIENT_EMAIL"
+            }
+
+    clean_to_email = primary_email
     config = custom_config or get_effective_smtp_config(db)
 
     # 2. Check if SMTP credentials are configured
@@ -230,6 +240,11 @@ def send_smtp_message(
         msg["Subject"] = subject
         msg["From"] = f"{config['from_name']} <{config['from_email']}>"
         msg["To"] = clean_to_email
+        recipients = [clean_to_email]
+
+        if clean_cc and "@" in clean_cc and "." in clean_cc.split("@")[-1] and clean_cc != clean_to_email:
+            msg["Cc"] = clean_cc
+            recipients.append(clean_cc)
 
         part1 = MIMEText(text_content, "plain")
         part2 = MIMEText(html_content, "html")
@@ -245,24 +260,24 @@ def send_smtp_message(
         if port == 465:
             with smtplib.SMTP_SSL(host, port, timeout=12) as server:
                 server.login(username, password)
-                server.sendmail(config["from_email"], clean_to_email, msg.as_string())
+                server.sendmail(config["from_email"], recipients, msg.as_string())
         else:
             with smtplib.SMTP(host, port, timeout=12) as server:
                 if config["use_tls"]:
                     server.starttls()
                 server.login(username, password)
-                server.sendmail(config["from_email"], clean_to_email, msg.as_string())
+                server.sendmail(config["from_email"], recipients, msg.as_string())
 
-        logger.info(f"Successfully submitted email via SMTP to {clean_to_email}")
+        recipients_str = ", ".join(recipients)
+        logger.info(f"Successfully submitted email via SMTP to {recipients_str}")
         return {
             "status": "Sent",
-            "message": f"Email successfully accepted by SMTP server for delivery to {clean_to_email}",
+            "message": f"Email successfully accepted by SMTP server for delivery to {recipients_str}",
             "preview": html_content,
             "subject": subject,
             "error": None
         }
     except Exception as e:
-        # Redact any passwords/tokens from exception string
         safe_err = str(e)
         import re
         safe_err = re.sub(r':([^:@]+)@', ':****@', safe_err)
@@ -287,6 +302,7 @@ def send_parent_attendance_email(
     semester: int = 6,
     attended_sessions: int = 0,
     total_sessions: int = 0,
+    student_email: Optional[str] = None,
     db: Optional[Session] = None
 ) -> Dict[str, Any]:
     email_data = generate_attendance_email_content(
@@ -307,6 +323,7 @@ def send_parent_attendance_email(
         subject=email_data["subject"],
         html_content=email_data["html"],
         text_content=email_data["text"],
+        cc_email=student_email,
         db=db
     )
 

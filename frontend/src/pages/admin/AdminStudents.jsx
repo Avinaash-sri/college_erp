@@ -94,10 +94,12 @@ export default function AdminStudents() {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this student account? All attendance records will be removed.')) return;
     try {
+      setStudents(prev => prev.filter(s => s.id !== id));
       await client.delete(`/admin/students/${id}`);
-      fetchStudentsAndDepts();
+      await fetchStudentsAndDepts();
     } catch (e) {
-      alert('Failed to delete student');
+      alert('Failed to delete student: ' + (e.response?.data?.detail || e.message || ''));
+      fetchStudentsAndDepts();
     }
   };
 

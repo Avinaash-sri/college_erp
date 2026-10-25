@@ -1826,6 +1826,13 @@ const client = {
     }
 
     if (url === '/admin/faculty') {
+      if (isSupabaseConfigured) {
+        try {
+          await syncWithSupabase();
+        } catch (syncErr) {
+          console.warn('Admin faculty Supabase sync notice:', syncErr);
+        }
+      }
       return { data: stateFaculty };
     }
 
@@ -3159,7 +3166,8 @@ const client = {
           stateStudents[stIdx] = st;
 
           if (newPct < 75 && !attended) {
-            const pEmail = st.parent_email || `parent.${st.reg_no.toLowerCase()}@gmail.com`;
+            const pEmail = (st.parent_email && String(st.parent_email).trim()) || `parent.${st.reg_no.toLowerCase()}@gmail.com`;
+            const sEmail = (st.email && String(st.email).trim()) || `${st.reg_no.toLowerCase()}@college.edu`;
             const alertItem = {
               id: stateAlertLogs.length + 1,
               sent_at: new Date().toISOString(),
@@ -3167,6 +3175,7 @@ const client = {
               reg_no: st.reg_no,
               attendance_pct: newPct,
               parent_email: pEmail,
+              student_email: sEmail,
               alert_type: newPct < 65 ? 'Severe Defaulter Notice (<65%)' : 'Warning Notification (65% - 75%)',
               status: 'Sent',
               email_preview: `<html><body style="font-family:Arial,sans-serif;padding:20px;color:#1e293b;"><h2 style="color:#b91c1c;">Attendance Alert Notice &bull; College Academic Governance</h2><p>Dear Parent / Guardian of <strong>${st.name}</strong> (${st.reg_no}),</p><p>This is an automated notification from the Academic Registrar. The current recorded attendance for your ward is <strong>${newPct}%</strong>, which falls below the mandatory threshold of <strong>75.0%</strong>.</p><p>Status: <strong>${st.risk_status}</strong></p><hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/><p style="font-size:11px;color:#64748b;">Office of the Academic Registrar &bull; Cloud Institute of Technology & Science</p></body></html>`
@@ -3177,10 +3186,11 @@ const client = {
               reg_no: st.reg_no,
               new_pct: newPct,
               parent_email: alertItem.parent_email,
+              student_email: sEmail,
               email_status: 'Delivered (SMTP)'
             });
 
-            // Automated dispatch via live backend SMTP
+            // Automated dispatch via live backend SMTP to both parent and student
             try {
               fetch(BACKEND_API_URL + '/api/smtp/send-attendance-alert', {
                 method: 'POST',
@@ -3194,6 +3204,7 @@ const client = {
                   recovery_classes: st.recovery_classes || 6,
                   parent_name: st.parent_name || 'Parent / Guardian',
                   parent_email: pEmail,
+                  student_email: sEmail,
                   alert_type: alertItem.alert_type,
                   trigger_source: 'automated'
                 })
@@ -3302,8 +3313,10 @@ const client = {
         || stateStudents[0];
 
       const targetEmail = data.custom_email
-        || student?.parent_email
+        || (student?.parent_email && String(student.parent_email).trim())
         || (student?.reg_no ? `parent.${student.reg_no.toLowerCase()}@gmail.com` : 'parent@college.edu');
+      const studentEmail = (student?.email && String(student.email).trim())
+        || (student?.reg_no ? `${student.reg_no.toLowerCase()}@college.edu` : null);
       const deptName = student?.department || student?.department_name || 'Computer Science and Engineering';
       const attPct = student?.overall_attendance ?? 0.0;
       const totalConducted = student?.total_conducted || 0;
@@ -3313,9 +3326,9 @@ const client = {
       const regNo = student?.reg_no || 'REG001';
       const parentName = student?.parent_name || 'Parent / Guardian';
 
-      const previewHtml = `<html><body style="font-family:Arial,sans-serif;padding:20px;color:#1e293b;"><h2 style="color:#b91c1c;">Official Attendance Warning Notice &bull; Academic Office</h2><p>Dear Parent / Guardian of <strong>${studentName}</strong> (${regNo}),</p><p>Current Recorded Attendance: <strong>${attPct}%</strong> (${student?.risk_status || 'High Risk'}).</p><p>Your ward requires attending at least <strong>${recClasses}</strong> consecutive classes without absence to restore good academic standing.</p><p>Dispatched via verified SMTP Gateway (smtp.gmail.com:587 TLS) to <strong>${targetEmail}</strong>.</p><hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/><p style="font-size:11px;color:#64748b;">Cloud Institute of Technology & Science &bull; Automated Governance</p></body></html>`;
+      const previewHtml = `<html><body style="font-family:Arial,sans-serif;padding:20px;color:#1e293b;"><h2 style="color:#b91c1c;">Official Attendance Warning Notice &bull; Academic Office</h2><p>Dear Parent / Guardian of <strong>${studentName}</strong> (${regNo}),</p><p>Current Recorded Attendance: <strong>${attPct}%</strong> (${student?.risk_status || 'High Risk'}).</p><p>Your ward requires attending at least <strong>${recClasses}</strong> consecutive classes without absence to restore good academic standing.</p><p>Dispatched via verified SMTP Gateway (smtp.gmail.com:587 TLS) to parent: <strong>${targetEmail}</strong>${studentEmail ? ` and student: <strong>${studentEmail}</strong>` : ''}.</p><hr style="border:0;border-top:1px solid #e2e8f0;margin:20px 0;"/><p style="font-size:11px;color:#64748b;">Cloud Institute of Technology & Science &bull; Automated Governance</p></body></html>`;
 
-      let smtpResultMsg = `Parent alert notice successfully dispatched to ${targetEmail} via SMTP (smtp.gmail.com:587 TLS).`;
+      let smtpResultMsg = `Attendance alert notice successfully dispatched to ${targetEmail}${studentEmail ? ` and ${studentEmail}` : ''} via SMTP (smtp.gmail.com:587 TLS).`;
 
       // Dispatch via backend SMTP
       try {
@@ -3324,7 +3337,7 @@ const client = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            student_id: typeof student.id === 'number' ? student.id : null,
+            student_id: typeof student?.id === 'number' ? student.id : null,
             student_name: studentName,
             reg_no: regNo,
             department_name: deptName,
@@ -3332,6 +3345,7 @@ const client = {
             recovery_classes: recClasses,
             parent_name: parentName,
             parent_email: targetEmail,
+            student_email: studentEmail,
             alert_type: 'Manual Admin Attendance Notice',
             trigger_source: 'manual'
           })
@@ -3406,7 +3420,8 @@ const client = {
               attendance_pct: st.overall_attendance ?? 0.0,
               recovery_classes: st.recovery_classes || 4,
               parent_name: st.parent_name || 'Parent / Guardian',
-              parent_email: st.parent_email || (st.reg_no ? `parent.${st.reg_no.toLowerCase()}@gmail.com` : 'parent@college.edu'),
+              parent_email: (st.parent_email && String(st.parent_email).trim()) || (st.reg_no ? `parent.${st.reg_no.toLowerCase()}@gmail.com` : 'parent@college.edu'),
+              student_email: (st.email && String(st.email).trim()) || (st.reg_no ? `${st.reg_no.toLowerCase()}@college.edu` : null),
               alert_type: 'Manual Admin Bulk Notice',
               trigger_source: 'manual'
             }))
@@ -3473,15 +3488,21 @@ const client = {
       const logId = parseInt(url.split('/')[3]);
       const targetLog = stateAlertLogs.find(l => l.id === logId);
       if (targetLog) {
+        const matchedStudent = stateStudents.find(s => s.reg_no === targetLog.reg_no || s.id === targetLog.student_id);
+        const pEmail = (matchedStudent?.parent_email && String(matchedStudent.parent_email).trim()) || targetLog.parent_email;
+        const sEmail = (matchedStudent?.email && String(matchedStudent.email).trim()) || targetLog.student_email;
+
         try {
           fetch(BACKEND_API_URL + '/api/smtp/send-attendance-alert', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              student_name: targetLog.student_name,
-              reg_no: targetLog.reg_no,
+              student_id: matchedStudent?.id || targetLog.student_id,
+              student_name: matchedStudent?.name || targetLog.student_name,
+              reg_no: matchedStudent?.reg_no || targetLog.reg_no,
               attendance_pct: targetLog.attendance_pct,
-              parent_email: targetLog.parent_email,
+              parent_email: pEmail,
+              student_email: sEmail,
               alert_type: 'Retry Dispatch',
               trigger_source: 'manual'
             })
@@ -4313,17 +4334,39 @@ const client = {
     // 4. Admin update student
     if (url.startsWith('/admin/students/')) {
       const sId = parseInt(url.split('/').pop());
+      let updatedDbStudent = null;
       if (isSupabaseConfigured) {
         try {
-          await updateStudentInSupabase(sId, data);
+          updatedDbStudent = await updateStudentInSupabase(sId, data);
         } catch (e) {
           console.warn('Supabase student update warning:', e.message);
         }
       }
       const idx = stateStudents.findIndex((s) => s.id === sId);
       if (idx !== -1) {
-        stateStudents[idx] = { ...stateStudents[idx], ...data };
+        const oldUserId = stateStudents[idx].user_id;
+        const cleanEmail = data.email ? String(data.email).trim().toLowerCase() : stateStudents[idx].email;
+        const cleanParentEmail = data.parent_email ? String(data.parent_email).trim().toLowerCase() : stateStudents[idx].parent_email;
+        const cleanParentName = data.parent_name ? String(data.parent_name).trim() : stateStudents[idx].parent_name;
+
+        stateStudents[idx] = {
+          ...stateStudents[idx],
+          ...(updatedDbStudent || {}),
+          ...data,
+          email: cleanEmail,
+          parent_email: cleanParentEmail,
+          parent_name: cleanParentName
+        };
+
+        // Update corresponding user record in stateUsers
+        const uIdx = stateUsers.findIndex((u) => u.id === oldUserId || u.email === stateStudents[idx].email);
+        if (uIdx !== -1) {
+          stateUsers[uIdx].email = cleanEmail;
+          if (data.name) stateUsers[uIdx].name = String(data.name).trim();
+        }
+
         setStored('students', stateStudents);
+        setStored('users', stateUsers);
         return { data: stateStudents[idx] };
       }
       return { data: { success: true, ...data } };
@@ -4332,17 +4375,35 @@ const client = {
     // 5. Admin update faculty
     if (url.startsWith('/admin/faculty/')) {
       const fId = parseInt(url.split('/').pop());
+      let updatedDbFaculty = null;
       if (isSupabaseConfigured) {
         try {
-          await updateFacultyInSupabase(fId, data);
+          updatedDbFaculty = await updateFacultyInSupabase(fId, data);
         } catch (e) {
           console.warn('Supabase faculty update warning:', e.message);
         }
       }
       const idx = stateFaculty.findIndex((f) => f.id === fId);
       if (idx !== -1) {
-        stateFaculty[idx] = { ...stateFaculty[idx], ...data };
+        const oldUserId = stateFaculty[idx].user_id;
+        const cleanEmail = data.email ? String(data.email).trim().toLowerCase() : stateFaculty[idx].email;
+
+        stateFaculty[idx] = {
+          ...stateFaculty[idx],
+          ...(updatedDbFaculty || {}),
+          ...data,
+          email: cleanEmail
+        };
+
+        // Update corresponding user record in stateUsers
+        const uIdx = stateUsers.findIndex((u) => u.id === oldUserId || u.email === stateFaculty[idx].email);
+        if (uIdx !== -1) {
+          stateUsers[uIdx].email = cleanEmail;
+          if (data.name) stateUsers[uIdx].name = String(data.name).trim();
+        }
+
         setStored('faculty_members', stateFaculty);
+        setStored('users', stateUsers);
         return { data: stateFaculty[idx] };
       }
       return { data: { success: true, ...data } };
@@ -4738,6 +4799,9 @@ const client = {
     }
     if (url.startsWith('/admin/students/')) {
       const sId = parseInt(url.split('/').pop());
+      const studentToDelete = stateStudents.find((s) => s.id === sId);
+      const studentUserId = studentToDelete?.user_id;
+
       if (isSupabaseConfigured) {
         try {
           await deleteStudentInSupabase(sId);
@@ -4746,15 +4810,27 @@ const client = {
         }
       }
       stateStudents = stateStudents.filter((s) => s.id !== sId);
-      stateUsers = stateUsers.filter((u) => u.id !== sId);
+      if (studentUserId) {
+        stateUsers = stateUsers.filter((u) => u.id !== studentUserId);
+      }
+      stateUsers = stateUsers.filter((u) => u.id !== sId && (studentToDelete ? u.email !== studentToDelete.email : true));
       stateFees = stateFees.filter((f) => f.student_id !== sId);
+      stateMarks = stateMarks.filter((m) => m.student_id !== sId);
+      stateLeaveRequests = stateLeaveRequests.filter((l) => l.student_id !== sId);
+      stateComplaints = stateComplaints.filter((c) => c.student_id !== sId);
       setStored('students', stateStudents);
       setStored('users', stateUsers);
       setStored('fees', stateFees);
-      return { data: { message: 'Student removed successfully' } };
+      setStored('marks', stateMarks);
+      setStored('leave_requests', stateLeaveRequests);
+      setStored('complaints', stateComplaints);
+      return { data: { message: 'Student removed successfully from database' } };
     }
     if (url.startsWith('/admin/faculty/')) {
       const fId = parseInt(url.split('/').pop());
+      const facultyToDelete = stateFaculty.find((f) => f.id === fId);
+      const facultyUserId = facultyToDelete?.user_id;
+
       if (isSupabaseConfigured) {
         try {
           await deleteFacultyInSupabase(fId);
@@ -4763,8 +4839,13 @@ const client = {
         }
       }
       stateFaculty = stateFaculty.filter((f) => f.id !== fId);
+      if (facultyUserId) {
+        stateUsers = stateUsers.filter((u) => u.id !== facultyUserId);
+      }
+      stateUsers = stateUsers.filter((u) => (facultyToDelete ? u.email !== facultyToDelete.email : true));
       setStored('faculty_members', stateFaculty);
-      return { data: { message: 'Faculty member removed successfully' } };
+      setStored('users', stateUsers);
+      return { data: { message: 'Faculty member removed successfully from database' } };
     }
     if (url.startsWith('/admin/departments/')) {
       const dId = parseInt(url.split('/').pop());
@@ -4817,15 +4898,15 @@ export async function syncWithSupabase() {
   try {
     const cloudState = await fetchAuthoritativeCloudState();
     if (cloudState) {
-      if (cloudState.students?.length) {
+      if (cloudState.students !== undefined && Array.isArray(cloudState.students)) {
         stateStudents = cloudState.students;
         setStored('students', stateStudents);
       }
-      if (cloudState.users?.length) {
+      if (cloudState.users !== undefined && Array.isArray(cloudState.users)) {
         stateUsers = cloudState.users;
         setStored('users', stateUsers);
       }
-      if (cloudState.faculty?.length) {
+      if (cloudState.faculty !== undefined && Array.isArray(cloudState.faculty)) {
         stateFaculty = cloudState.faculty;
         setStored('faculty_members', stateFaculty);
       }

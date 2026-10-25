@@ -80,10 +80,12 @@ export default function AdminFaculty() {
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this faculty record? Assigned subjects and timetable entries will be unassigned.')) return;
     try {
+      setFaculty(prev => prev.filter(f => f.id !== id));
       await client.delete(`/admin/faculty/${id}`);
-      fetchFacultyAndDepts();
+      await fetchFacultyAndDepts();
     } catch (e) {
-      alert('Failed to delete faculty member');
+      alert('Failed to delete faculty member: ' + (e.response?.data?.detail || e.message || ''));
+      fetchFacultyAndDepts();
     }
   };
 

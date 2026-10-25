@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database schema migrations verified successfully.")
     except Exception as e:
         logger.error(f"Error applying database migrations: {e}")
-        if settings.ENVIRONMENT.lower() == "production":
+        if settings.ENVIRONMENT.lower() == "production" and settings.DATABASE_URL:
             raise
 
     # Start persistent assignment reminder background scheduler

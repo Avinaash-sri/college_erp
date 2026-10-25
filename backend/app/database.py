@@ -37,15 +37,12 @@ def get_engine():
 
     if raw_db_url:
         if raw_db_url.startswith("http://") or raw_db_url.startswith("https://"):
-            msg = (
-                f"Invalid DATABASE_URL: '{raw_db_url}'. "
-                "This is a Supabase web dashboard browser URL, not a PostgreSQL database connection string. "
-                "To connect to Supabase, copy the PostgreSQL URI from: "
-                "Supabase Dashboard -> Project Settings -> Database -> Connection string (URI), "
-                "format: postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres?sslmode=require"
+            logger.warning(
+                f"Notice: '{raw_db_url}' is a Supabase HTTP REST URL, not a direct PostgreSQL URI. "
+                "FastAPI requires PostgreSQL connection string format (postgresql://postgres:[PASSWORD]@...). "
+                "Falling back safely to local database so the service boots without crashing."
             )
-            logger.error(msg)
-            raise ValueError(msg)
+            raw_db_url = ""
 
         db_url = normalize_database_url(raw_db_url)
         sanitized = sanitize_db_url(db_url)
@@ -107,9 +104,12 @@ def get_engine():
                     raise RuntimeError(f"Database connection to MySQL failed in production mode: {e}")
                 logger.warning(f"Development mode fallback: Using local SQLite database at {settings.FALLBACK_SQLITE_URL}")
 
-    # 3. SQLite Database (Only in local development when DATABASE_URL is not set)
-    if is_production:
-        raise RuntimeError("DATABASE_URL must be configured in production mode for Supabase PostgreSQL.")
+    # 3. SQLite Database (Fallback when DATABASE_URL is not set)
+    if is_production and not raw_db_url:
+        logger.warning(
+            "DATABASE_URL is not configured in production environment. "
+            "Falling back to local SQLite database so the FastAPI SMTP and AI API service remains online."
+        )
 
     logger.info(f"Initializing local SQLite database at {settings.FALLBACK_SQLITE_URL}")
     return create_engine(

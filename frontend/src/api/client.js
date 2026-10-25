@@ -3205,7 +3205,23 @@ const client = {
 
             if (isSupabaseConfigured) {
         try {
-          await saveAttendanceInSupabase(subId, dateVal, session_name, currentLoggedUser?.id, records);
+          let facId = null;
+          try {
+            const rawUser = localStorage.getItem('erp_user');
+            if (rawUser) {
+              const parsedUser = JSON.parse(rawUser);
+              const matchedFac = (stateFaculty || []).find((f) => f.email === parsedUser.email || f.id === parsedUser.faculty_id);
+              if (matchedFac) {
+                facId = matchedFac.id;
+              } else if (parsedUser.role === 'faculty') {
+                facId = parsedUser.faculty_id || parsedUser.id || 2;
+              }
+            }
+          } catch (e) {}
+          if (!facId && stateFaculty?.length > 0) {
+            facId = stateFaculty[0].id;
+          }
+          await saveAttendanceInSupabase(subId, dateVal, session_name, facId || 2, records);
         } catch (attErr) {
           console.warn('Supabase attendance save warning:', attErr.message);
         }

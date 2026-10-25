@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import StatusBadge from '../../components/common/StatusBadge';
-import { CalendarCheck, Save, CheckCircle, AlertTriangle, Users, MailCheck } from 'lucide-react';
+import { CalendarCheck, Save, CheckCircle, CheckCircle2, AlertTriangle, Users, MailCheck, Loader2 } from 'lucide-react';
 
 export default function FacultyAttendance() {
   const [subjects, setSubjects] = useState([]);
@@ -12,6 +12,7 @@ export default function FacultyAttendance() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
   useEffect(() => {
@@ -68,6 +69,7 @@ export default function FacultyAttendance() {
   const handleSaveAttendance = async () => {
     setSaving(true);
     setFeedback(null);
+    setJustSaved(false);
     try {
       const payload = {
         subject_id: parseInt(selectedSubject),
@@ -80,14 +82,19 @@ export default function FacultyAttendance() {
       };
 
       const res = await client.post('/faculty/attendance', payload);
+      setJustSaved(true);
       setFeedback({
         type: 'success',
-        message: res.data.message,
+        message: res.data.message || 'Attendance saved and synchronized with cloud database.',
         alerts: res.data.alerts_triggered || [],
       });
       // Refresh to update current percentages
       fetchSessionData(selectedSubject, date);
+      setTimeout(() => {
+        setJustSaved(false);
+      }, 3500);
     } catch (err) {
+      setJustSaved(false);
       setFeedback({
         type: 'error',
         message: err.response?.data?.detail || 'Failed to record attendance.',
@@ -162,19 +169,30 @@ export default function FacultyAttendance() {
       {/* Feedback Banner */}
       {feedback && (
         <div
-          className={`rounded-xl border p-4 text-xs ${
+          className={`rounded-xl border p-4 text-xs transition-all duration-300 animate-in fade-in slide-in-from-top-2 ${
             feedback.type === 'success'
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-              : 'bg-rose-50 border-rose-200 text-rose-800'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800 shadow-xs'
+              : 'bg-rose-50 border-rose-200 text-rose-800 shadow-xs'
           }`}
         >
-          <div className="flex items-center space-x-2 font-bold">
-            {feedback.type === 'success' ? (
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
-            ) : (
-              <AlertTriangle className="w-4 h-4 text-rose-600" />
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center space-x-2 font-bold">
+              {feedback.type === 'success' ? (
+                <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0 animate-in zoom-in-75 duration-200">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 flex-shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+              )}
+              <span className="text-sm font-semibold">{feedback.message}</span>
+            </div>
+            {feedback.type === 'success' && (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 self-start sm:self-auto">
+                ✓ Supabase Cloud Persistent
+              </span>
             )}
-            <span>{feedback.message}</span>
           </div>
 
           {/* Triggered Parent Alerts notification */}
@@ -198,7 +216,7 @@ export default function FacultyAttendance() {
 
       {/* Attendance Roster Table */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs">
-        <div className="border-b border-slate-100 pb-4 mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="border-b border-slate-100 pb-4 mb-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2 sm:gap-4">
             <span className="text-xs font-bold text-slate-700">Roster ({safeStudents.length} Students)</span>
             <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
@@ -209,7 +227,7 @@ export default function FacultyAttendance() {
             </span>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => handleMarkAll('Present')}
@@ -223,6 +241,35 @@ export default function FacultyAttendance() {
               className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
             >
               Mark All Absent
+            </button>
+            <button
+              type="button"
+              disabled={saving || students.length === 0}
+              onClick={handleSaveAttendance}
+              className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 shadow-xs disabled:opacity-50 ${
+                justSaved
+                  ? 'bg-emerald-600 text-white ring-2 ring-emerald-300'
+                  : saving
+                  ? 'bg-blue-700 text-white animate-pulse'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                  <span>Saving...</span>
+                </>
+              ) : justSaved ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-white animate-bounce" />
+                  <span>Saved!</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -288,15 +335,38 @@ export default function FacultyAttendance() {
           </div>
         )}
 
-        <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-end">
+        <div className="mt-6 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-xs text-slate-500 font-medium">
+            {presentCount} Present &bull; {absentCount} Absent &bull; Recalculates immediately upon saving
+          </div>
           <button
             type="button"
             disabled={saving || students.length === 0}
             onClick={handleSaveAttendance}
-            className="w-full sm:w-auto flex items-center justify-center space-x-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-xs disabled:opacity-50"
+            className={`w-full sm:w-auto flex items-center justify-center space-x-2 px-6 py-2.5 rounded-lg text-xs font-bold transition-all duration-300 transform active:scale-95 shadow-xs disabled:opacity-50 ${
+              justSaved
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-300 ring-offset-2 scale-[1.02] shadow-md'
+                : saving
+                ? 'bg-blue-700 text-white cursor-wait animate-pulse'
+                : 'bg-blue-600 hover:bg-blue-700 text-white hover:shadow'
+            }`}
           >
-            <Save className="w-4 h-4" />
-            <span>{saving ? 'Saving Attendance & Recalculating...' : 'Save & Submit Attendance'}</span>
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <span>Saving Attendance & Recalculating...</span>
+              </>
+            ) : justSaved ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                <span>Saved Successfully to Cloud!</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>Save & Submit Attendance</span>
+              </>
+            )}
           </button>
         </div>
       </div>

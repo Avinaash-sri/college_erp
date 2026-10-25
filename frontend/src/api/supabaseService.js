@@ -668,11 +668,25 @@ export async function deleteFacultyInSupabase(facultyId) {
 export async function saveAttendanceInSupabase(subjectId, date, sessionName, facultyId, studentRecords) {
   if (!isSupabaseConfigured) return [];
 
-  const numericFacultyId = facultyId && !isNaN(parseInt(facultyId)) ? parseInt(facultyId) : null;
+  const targetSubjectId = parseInt(subjectId) || 1;
+  const targetDate = date || new Date().toISOString().split('T')[0];
+  const numericFacultyId = facultyId && !isNaN(parseInt(facultyId)) ? parseInt(facultyId) : 2;
+
+  // Clean existing attendance entries for this subject and date to prevent duplicate counts
+  try {
+    await supabase
+      .from('attendance')
+      .delete()
+      .eq('subject_id', targetSubjectId)
+      .eq('date', targetDate);
+  } catch (cleanErr) {
+    console.warn('Notice while updating previous attendance session records:', cleanErr?.message);
+  }
+
   const insertRows = (studentRecords || []).map((rec) => ({
-    student_id: rec.student_id,
-    subject_id: parseInt(subjectId),
-    date: date || new Date().toISOString().split('T')[0],
+    student_id: parseInt(rec.student_id),
+    subject_id: targetSubjectId,
+    date: targetDate,
     status: rec.status || 'Present',
     session_name: sessionName || 'Lecture',
     marked_by: numericFacultyId

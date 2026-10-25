@@ -19,16 +19,16 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-[100] overflow-y-auto">
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
         onClick={onClose}
       />
 
-      <div className="flex min-h-full items-center justify-center p-2.5 sm:p-4 text-center">
+      <div className="flex min-h-full items-center justify-center p-3 sm:p-5 text-center">
         <div 
-          className={`relative w-full ${maxWidth} transform overflow-hidden rounded-xl sm:rounded-2xl bg-white text-left align-middle shadow-xl transition-all border border-slate-200`}
+          className={`relative w-full ${maxWidth} transform overflow-hidden rounded-xl sm:rounded-2xl bg-white text-left align-middle shadow-2xl transition-all border border-slate-200 my-auto`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

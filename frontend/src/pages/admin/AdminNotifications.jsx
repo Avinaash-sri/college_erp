@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import Modal from '../../components/common/Modal';
-import { Bell, Plus, Megaphone } from 'lucide-react';
+import { Bell, Plus, Megaphone, CheckCircle2 } from 'lucide-react';
 
 export default function AdminNotifications() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [publishedNotice, setPublishedNotice] = useState(null);
   const [formData, setFormData] = useState({
     title: '',
     message: '',
@@ -33,9 +34,10 @@ export default function AdminNotifications() {
       await client.post('/admin/notifications', formData);
       setModalOpen(false);
       fetchNotifs();
+      setPublishedNotice({ ...formData, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
       setFormData({ title: '', message: '', type: 'General Announcement' });
     } catch (e) {
-      alert('Failed to broadcast circular');
+      alert('Failed to broadcast circular: ' + (e.response?.data?.detail || e.message));
     } finally {
       setSaving(false);
     }
@@ -138,6 +140,50 @@ export default function AdminNotifications() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* CIRCULAR BROADCAST CONFIRMATION MODAL */}
+      <Modal
+        isOpen={!!publishedNotice}
+        onClose={() => setPublishedNotice(null)}
+        title="Circular Broadcast Confirmation"
+        maxWidth="max-w-md"
+      >
+        {publishedNotice && (
+          <div className="space-y-4 py-1">
+            <div className="text-center py-2">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-xs">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">
+                Circular Broadcasted Successfully!
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                The institutional announcement is now visible on student and faculty dashboards.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2">
+              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                {publishedNotice.type}
+              </span>
+              <h4 className="text-sm font-bold text-slate-900">{publishedNotice.title}</h4>
+              <p className="text-xs text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200">
+                {publishedNotice.message}
+              </p>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setPublishedNotice(null)}
+                className="w-full sm:w-auto px-5 py-2 rounded-lg bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 transition-colors"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

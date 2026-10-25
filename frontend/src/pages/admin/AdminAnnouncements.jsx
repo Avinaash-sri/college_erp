@@ -17,7 +17,9 @@ import {
   Archive,
   UploadCloud,
   Image,
-  X
+  X,
+  AlertTriangle,
+  Loader2
 } from 'lucide-react';
 
 
@@ -28,7 +30,9 @@ export default function AdminAnnouncements() {
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [publishedNotice, setPublishedNotice] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
 
@@ -132,8 +136,9 @@ export default function AdminAnnouncements() {
 
   const handleCreateAnnouncement = async (e) => {
     e.preventDefault();
+    setFormError('');
     if (!formData.title.trim() || !formData.description.trim()) {
-      alert('Please fill out the announcement title and description');
+      setFormError('Please fill out both the announcement title and description message.');
       return;
     }
 
@@ -146,15 +151,31 @@ export default function AdminAnnouncements() {
         target_section: formData.target_section === 'All' ? null : formData.target_section,
         event_date: formData.event_date ? formData.event_date : null,
         registration_url: formData.registration_url.trim() || null,
-        poster_url: formData.poster_url.trim() || null
+        poster_url: formData.poster_url.trim() || filePreview || null
       };
 
       await client.post('/admin/announcements', payload);
-      alert('Announcement published! Individual notifications have been generated for the target audience.');
+
+      const targetDept = departments.find((d) => String(d.id) === String(formData.target_department_id));
+      const audienceScope = formData.audience_type === 'all'
+        ? 'Entire College (All Students & Faculty)'
+        : `${targetDept ? targetDept.name : 'Targeted Department'} • Sem ${formData.target_semester || 'All'}${formData.target_section && formData.target_section !== 'All' ? ' • Section ' + formData.target_section : ''}`;
+
+      setPublishedNotice({
+        title: formData.title,
+        category: formData.category,
+        description: formData.description,
+        audience: audienceScope,
+        event_date: formData.event_date,
+        registration_url: formData.registration_url,
+        poster_url: formData.poster_url || filePreview,
+        broadcast_time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      });
+
       setCreateModalOpen(false);
       fetchAnnouncements();
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to publish announcement');
+      setFormError(err.response?.data?.detail || 'Failed to publish announcement. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -336,6 +357,12 @@ export default function AdminAnnouncements() {
         maxWidth="max-w-2xl"
       >
         <form onSubmit={handleCreateAnnouncement} className="space-y-4">
+          {formError && (
+            <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs text-rose-800 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+              <span className="font-medium">{formError}</span>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 mb-1">
               Announcement Title *
@@ -567,12 +594,130 @@ export default function AdminAnnouncements() {
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-2 rounded-lg bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 disabled:opacity-50 shadow-2xs"
+              className="px-5 py-2 rounded-lg bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 disabled:opacity-50 shadow-2xs flex items-center space-x-2"
             >
-              {saving ? 'Broadcasting...' : 'Broadcast Announcement'}
+              {saving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Broadcasting Notice...</span>
+                </>
+              ) : (
+                <span>Broadcast Announcement</span>
+              )}
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* PUBLISHED SUCCESS CONFIRMATION POPUP */}
+      <Modal
+        isOpen={!!publishedNotice}
+        onClose={() => setPublishedNotice(null)}
+        title="Announcement Broadcast Confirmation"
+        maxWidth="max-w-xl"
+      >
+        {publishedNotice && (
+          <div className="space-y-4 py-1">
+            <div className="text-center py-2">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3 shadow-xs">
+                <CheckCircle2 className="w-7 h-7 animate-in zoom-in-75 duration-200" />
+              </div>
+              <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                Announcement Published Successfully!
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                The circular is now live across student and faculty portals with notifications generated for the audience.
+              </p>
+            </div>
+
+            {/* Announcement Card Preview */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                      {publishedNotice.category}
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                      <Users className="w-3 h-3" />
+                      {publishedNotice.audience}
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                    {publishedNotice.title}
+                  </h4>
+                </div>
+                {publishedNotice.poster_url && (
+                  <img
+                    src={publishedNotice.poster_url}
+                    alt="Poster thumbnail"
+                    className="w-16 h-16 object-cover rounded-lg border border-slate-200 flex-shrink-0"
+                  />
+                )}
+              </div>
+
+              <p className="text-xs text-slate-600 line-clamp-3 bg-white p-2.5 rounded-lg border border-slate-200/80">
+                {publishedNotice.description}
+              </p>
+
+              <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+                <span>Broadcast Time: Today at {publishedNotice.broadcast_time}</span>
+                {publishedNotice.event_date && (
+                  <span className="font-medium text-slate-700">Event Date: {publishedNotice.event_date}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Notification alert info */}
+            <div className="rounded-lg bg-blue-50/80 border border-blue-200 p-3 flex items-start gap-2.5 text-xs text-blue-900">
+              <Megaphone className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-bold">Automated Notifications Dispatched</p>
+                <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+                  Individual notification records have been stored in Supabase PostgreSQL and routed to enrolled students and assigned faculty.
+                </p>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setPublishedNotice(null);
+                  setFormData({
+                    title: '',
+                    description: '',
+                    category: 'General Announcement',
+                    poster_url: '',
+                    file_data: '',
+                    event_date: '',
+                    registration_url: '',
+                    audience_type: 'all',
+                    target_department_id: '',
+                    target_semester: 6,
+                    target_section: 'All',
+                    status: 'published'
+                  });
+                  setFilePreview(null);
+                  setFileName('');
+                  setFormError('');
+                  setCreateModalOpen(true);
+                }}
+                className="w-full sm:w-auto px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Broadcast Another
+              </button>
+              <button
+                type="button"
+                onClick={() => setPublishedNotice(null)}
+                className="w-full sm:w-auto px-5 py-2 rounded-lg bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 transition-colors shadow-2xs"
+              >
+                Done & View in Feed
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

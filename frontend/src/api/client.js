@@ -36,7 +36,11 @@ import {
   calculateStudentCGPAFromMarks
 } from './supabaseService';
 
-const BACKEND_API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL) ? import.meta.env.VITE_API_URL : 'http://127.0.0.1:8000';
+const BACKEND_API_URL = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_URL)
+  ? import.meta.env.VITE_API_URL
+  : (typeof window !== 'undefined' && window.location && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+    ? 'http://127.0.0.1:8000'
+    : 'https://college-erp-backend-9fgl.onrender.com';
 
 import { supabase, isSupabaseConfigured, signInWithEmail, signUpStudent, requestPasswordReset, uploadAssignmentFile } from '../lib/supabase';
 import {

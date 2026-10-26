@@ -203,17 +203,19 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
   };
 
   const handleNotifClick = (n) => {
+    if (!n) return;
     if (!n.is_read) {
       handleMarkAsRead(n.id);
     }
     setNotifDropdownOpen(false);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastNotif(null);
+
+    // Direct navigation to notification module of active panel
     if (user?.role === 'student') {
-      if (n.title?.toLowerCase().includes('quiz')) navigate('/student/quizzes');
-      else if (n.title?.toLowerCase().includes('assignment')) navigate('/student/assignments');
-      else if (n.title?.toLowerCase().includes('attendance')) navigate('/student/attendance');
-      else navigate('/student/notifications');
+      navigate('/student/notifications');
     } else if (user?.role === 'faculty') {
-      navigate('/faculty/announcements');
+      navigate('/faculty/notifications');
     } else {
       navigate('/admin/notifications');
     }
@@ -584,7 +586,7 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
               {/* Footer */}
               <div className="p-2.5 bg-slate-50 border-t border-slate-100 text-center">
                 <Link
-                  to={user?.role === 'admin' ? '/admin/announcements' : (user?.role === 'faculty' ? '/faculty/notifications' : '/student/notifications')}
+                  to={user?.role === 'admin' ? '/admin/notifications' : (user?.role === 'faculty' ? '/faculty/notifications' : '/student/notifications')}
                   onClick={() => setNotifDropdownOpen(false)}
                   className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors inline-flex items-center gap-1"
                 >
@@ -612,7 +614,9 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
       {toastNotif && (
         <div
           role="alert"
-          className="fixed top-16 sm:top-20 right-4 sm:right-6 z-[99999] w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white rounded-2xl shadow-2xl border border-blue-200 p-4 transition-all duration-200 flex items-start gap-3.5 ring-1 ring-blue-500/20 backdrop-blur-md pointer-events-auto animate-in fade-in slide-in-from-top-4"
+          onClick={() => handleNotifClick(toastNotif)}
+          className="fixed top-16 sm:top-20 right-4 sm:right-6 z-[99999] w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white rounded-2xl shadow-2xl border border-blue-200 p-4 transition-all duration-200 flex items-start gap-3.5 ring-1 ring-blue-500/20 backdrop-blur-md pointer-events-auto cursor-pointer hover:bg-blue-50/40 hover:border-blue-300 hover:shadow-3xl active:scale-[0.99] animate-in fade-in slide-in-from-top-4"
+          title="Touch to open notification module"
         >
           <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 shadow-xs">
             <Bell className="w-4 h-4 animate-bounce" />
@@ -623,7 +627,11 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
                 {toastNotif.type || 'Alert'}
               </span>
               <button
-                onClick={() => setToastNotif(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+                  setToastNotif(null);
+                }}
                 className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
                 aria-label="Dismiss notification"
               >

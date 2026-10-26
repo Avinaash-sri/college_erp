@@ -2580,7 +2580,8 @@ const client = {
         try {
           await createQuizAttemptInSupabase(qId, st.id, score, quiz ? quiz.total_marks : 10.0);
         } catch (e) {
-          console.warn('Supabase quiz attempt submit warning:', e.message);
+          console.error('Supabase quiz attempt submit error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to save quiz attempt in database.' } } };
         }
       }
 
@@ -2835,7 +2836,8 @@ const client = {
         try {
           await submitAssignmentInSupabase(newSub);
         } catch (e) {
-          console.warn('Supabase assignment submission warning:', e.message);
+          console.error('Supabase assignment submission error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to record assignment submission in database.' } } };
         }
       }
 
@@ -2867,7 +2869,8 @@ const client = {
         try {
           await submitAssignmentInSupabase(newSub);
         } catch (e) {
-          console.warn('Supabase assignment drive submission warning:', e.message);
+          console.error('Supabase assignment drive submission error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to record assignment drive submission in database.' } } };
         }
       }
 
@@ -2883,6 +2886,7 @@ const client = {
       const parts = url.split('/');
       const asgnId = parseInt(parts[3]);
       const studentId = parseInt(parts[5]);
+      const currentFac = getLoggedInFaculty ? getLoggedInFaculty() : getLoggedInUser();
 
       const sub = stateSubmissions.find((s) => s.assignment_id === asgnId && s.student_id === studentId);
       if (sub) {
@@ -2890,6 +2894,20 @@ const client = {
         sub.faculty_feedback = data.feedback;
         sub.status = data.return_for_resubmission ? 'Returned for Resubmission' : 'Graded';
         setStored('submissions', stateSubmissions);
+
+        if (isSupabaseConfigured && sub.id) {
+          try {
+            await gradeAssignmentSubmissionInSupabase(
+              sub.id,
+              parseFloat(data.marks),
+              data.feedback,
+              currentFac?.id || null
+            );
+          } catch (gradeErr) {
+            console.error('Supabase grade assignment error:', gradeErr);
+            throw { response: { status: 400, data: { detail: gradeErr.message || 'Failed to save grade to Supabase database.' } } };
+          }
+        }
       }
 
       return { data: { message: 'Submission evaluated and graded successfully.' } };
@@ -3339,7 +3357,8 @@ const client = {
             }
           }
         } catch (attErr) {
-          console.warn('Supabase attendance save warning:', attErr.message);
+          console.error('Supabase attendance save error:', attErr);
+          throw { response: { status: 400, data: { detail: attErr.message || 'Failed to save attendance records in database.' } } };
         }
       }
 
@@ -3711,7 +3730,8 @@ const client = {
             row.id = saved.id;
           }
         } catch (e) {
-          console.warn('Supabase marks update:', e.message);
+          console.error('Supabase marks update error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to save marks in database.' } } };
         }
       }
 
@@ -4411,7 +4431,8 @@ const client = {
         try {
           updatedDbStudent = await updateStudentInSupabase(sId, data);
         } catch (e) {
-          console.warn('Supabase student update warning:', e.message);
+          console.error('Supabase student update error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to update student in database.' } } };
         }
       }
       const idx = stateStudents.findIndex((s) => s.id === sId);
@@ -4452,7 +4473,8 @@ const client = {
         try {
           updatedDbFaculty = await updateFacultyInSupabase(fId, data);
         } catch (e) {
-          console.warn('Supabase faculty update warning:', e.message);
+          console.error('Supabase faculty update error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to update faculty in database.' } } };
         }
       }
       const idx = stateFaculty.findIndex((f) => f.id === fId);
@@ -4572,7 +4594,8 @@ const client = {
         try {
           await updateComplaintInSupabase(cId, newStatus, newResponse);
         } catch (e) {
-          console.warn('Supabase complaint update notice:', e.message);
+          console.error('Supabase complaint update error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to update complaint status in database.' } } };
         }
       }
 
@@ -4607,7 +4630,8 @@ const client = {
         try {
           await updateAnnouncementInSupabase(aId, data);
         } catch (e) {
-          console.warn('Supabase announcement update notice:', e.message);
+          console.error('Supabase announcement update error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to update announcement in database.' } } };
         }
       }
       const idx = stateAnnouncements.findIndex((a) => a.id === aId);
@@ -4834,7 +4858,8 @@ const client = {
         try {
           await deleteAssignmentInSupabase(asgnId);
         } catch (e) {
-          console.warn('Supabase assignment delete notice:', e.message);
+          console.error('Supabase assignment delete error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to delete assignment from database.' } } };
         }
       }
       stateAssignments = stateAssignments.filter((a) => a.id !== asgnId);
@@ -4849,7 +4874,8 @@ const client = {
         try {
           await deleteComplaintInSupabase(cId);
         } catch (e) {
-          console.warn('Supabase complaint delete notice:', e.message);
+          console.error('Supabase complaint delete error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to delete complaint from database.' } } };
         }
       }
       stateComplaints = stateComplaints.filter((c) => c.id !== cId);
@@ -4862,7 +4888,8 @@ const client = {
         try {
           await deleteAnnouncementInSupabase(aId);
         } catch (e) {
-          console.warn('Supabase announcement delete notice:', e.message);
+          console.error('Supabase announcement delete error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to delete announcement from database.' } } };
         }
       }
       stateAnnouncements = stateAnnouncements.filter((a) => a.id !== aId);

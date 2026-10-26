@@ -1,76 +1,72 @@
 import urllib.request
+import urllib.error
 import json
-import os
 import re
 
-SUPABASE_URL = "https://wydblgfxdxrwvxhfrjdx.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind5ZGJsZ2Z4ZHhyd3Z4aGZyamR4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0NzQ0MDEsImV4cCI6MjEwODA1MDQwMX0.Ufe56W6mJacoT3uwaDqLAhsSyQ8oO5QXTGG0NNeg5lw"
+print("=" * 60)
+print("INDEPENDENT AUDIT: VERCEL, RENDER, SUPABASE, API ROUTING")
+print("=" * 60)
 
-headers = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}"
+# 1. Probe Vercel Frontend
+vercel_url = "https://college-erp-git-main-avinaash-sris-projects.vercel.app/"
+print(f"\n[1] Probing Vercel Frontend: {vercel_url}")
+try:
+    req = urllib.request.Request(vercel_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=15) as res:
+        print(f"  HTTP Status: {res.status}")
+        html = res.read().decode("utf-8", errors="ignore")
+        scripts = re.findall(r'src="([^"]+)"', html)
+        print(f"  Loaded Scripts: {scripts}")
+except Exception as e:
+    print(f"  Vercel Frontend Error: {e}")
+
+# 2. Probe Render Backend
+render_url = "https://college-erp-backend-9fgl.onrender.com"
+print(f"\n[2] Probing Render Backend Root & Health: {render_url}")
+for path in ["/", "/health", "/docs", "/openapi.json"]:
+    try:
+        req = urllib.request.Request(render_url + path, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as res:
+            data = res.read()
+            print(f"  {path} -> HTTP {res.status} ({len(data)} bytes)")
+            if path in ["/", "/health"]:
+                print(f"     Content: {data.decode(errors='ignore')}")
+    except Exception as e:
+        print(f"  {path} -> Error: {e}")
+
+# 3. Test Vercel /api rewrite proxy to Render
+print(f"\n[3] Testing Vercel /api rewrite proxy:")
+for api_path in ["/api/health", "/api/auth/login", "/api/smtp/test-connection"]:
+    v_url = vercel_url.rstrip("/") + api_path
+    try:
+        req = urllib.request.Request(v_url, data=b"{}", headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as res:
+            print(f"  {v_url} -> HTTP {res.status}")
+    except urllib.error.HTTPError as e:
+        print(f"  {v_url} -> HTTP {e.code} ({e.read().decode(errors='ignore')[:100]})")
+    except Exception as e:
+        print(f"  {v_url} -> Error: {e}")
+
+# 4. Probe Direct Supabase REST API
+print(f"\n[4] Probing Direct Supabase REST API:")
+with open("frontend/.env", "r") as f:
+    for line in f:
+        if line.startswith("VITE_SUPABASE_ANON_KEY="):
+            anon_key = line.strip().split("=", 1)[1]
+            break
+sb_url = "https://wydblgfxdxrwvxhfrjdx.supabase.co/rest/v1"
+sb_headers = {
+    "apikey": anon_key,
+    "Authorization": f"Bearer {anon_key}",
+    "Content-Type": "application/json"
 }
-
-print("=" * 60)
-print("INSPECTING PRODUCTION SUPABASE STATE")
-print("=" * 60)
-
-# 1. Fetch system_settings
-try:
-    req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/system_settings?select=*", headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        settings_data = json.loads(resp.read().decode())
-        print(f"\n[1. Supabase system_settings Table] (Total rows: {len(settings_data)})")
-        for s in settings_data:
-            key = s.get("key", "")
-            val = s.get("value", "")
-            if any(k in key.upper() for k in ["PASS", "SECRET", "KEY", "TOKEN"]):
-                val = "****"
-            print(f"  {key}: {val}")
-except Exception as e:
-    print(f"Error fetching system_settings: {e}")
-
-# 2. Fetch latest attendance_alerts from Supabase
-try:
-    req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/attendance_alerts?select=*&order=sent_at.desc&limit=10", headers=headers)
-    with urllib.request.urlopen(req) as resp:
-        alerts_data = json.loads(resp.read().decode())
-        print(f"\n[2. Supabase attendance_alerts Table - Latest 10 records]")
-        for a in alerts_data:
-            email = a.get("parent_email", "N/A")
-            # Mask recipient for privacy
-            masked_email = email
-            if "@" in email:
-                p = email.split("@")
-                masked_email = f"{p[0][:2]}***@{p[1]}"
-            print(f"  ID: {a.get('id')} | Student ID: {a.get('student_id')} | Pct: {a.get('attendance_pct')}% | Recipient: {masked_email} | Status: {a.get('status')} | Sent At: {a.get('sent_at')} | Last Error: {a.get('last_error')}")
-except Exception as e:
-    print(f"Error fetching attendance_alerts: {e}")
-
-# 3. Check Vercel build configuration & environment variables in repo
-print("\n[3. Frontend Configuration Inspection]")
-frontend_env_path = os.path.join("frontend", ".env")
-if os.path.exists(frontend_env_path):
-    with open(frontend_env_path, "r", encoding="utf-8") as f:
-        env_lines = f.readlines()
-    print("  frontend/.env contents:")
-    for line in env_lines:
-        line_clean = line.strip()
-        if not line_clean or line_clean.startswith("#"):
-            continue
-        key, _, val = line_clean.partition("=")
-        if any(k in key.upper() for k in ["KEY", "SECRET", "PASS"]):
-            val = "****"
-        print(f"    {key}={val}")
-
-# 4. Check compiled bundle in frontend/dist
-dist_asset_path = os.path.join("frontend", "dist", "assets")
-if os.path.exists(dist_asset_path):
-    for fn in os.listdir(dist_asset_path):
-        if fn.endswith(".js"):
-            fp = os.path.join(dist_asset_path, fn)
-            with open(fp, "r", encoding="utf-8", errors="ignore") as f:
-                content = f.read()
-            m = re.search(r'ma="(https?://[^"]+)"', content)
-            if m:
-                print(f"  Compiled API URL inside {fn}: {m.group(1)}")
+for table in ["students", "faculty", "users", "attendance", "marks", "assignments", "quizzes", "notifications"]:
+    try:
+        req = urllib.request.Request(f"{sb_url}/{table}?select=id&limit=2", headers=sb_headers)
+        with urllib.request.urlopen(req, timeout=10) as res:
+            records = json.loads(res.read().decode())
+            print(f"  Supabase table '{table}': Accessible, HTTP {res.status}, sample records: {len(records)}")
+    except urllib.error.HTTPError as e:
+        print(f"  Supabase table '{table}': HTTP Error {e.code} - {e.read().decode(errors='ignore')[:100]}")
+    except Exception as e:
+        print(f"  Supabase table '{table}': Error {e}")

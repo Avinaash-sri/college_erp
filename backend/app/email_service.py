@@ -337,14 +337,14 @@ def send_via_resend(
             log_structured_email_event(
                 event_type=event_type,
                 recipient=to_email,
-                status="Sent",
+                status="Accepted",
                 duration_ms=duration_ms,
                 provider_code=f"Resend HTTP {response.status_code} ({email_id})"
             )
             return {
                 "status": "Sent",
-                "delivery_status": "Delivered via Resend HTTPS API",
-                "message": f"Email successfully accepted by Resend API (ID: {email_id}) for delivery to {', '.join(recipients)}",
+                "delivery_status": f"Accepted by Resend API (Message ID: {email_id})",
+                "message": f"Email accepted by Resend API for transmission to {', '.join(recipients)}",
                 "preview": html_content,
                 "subject": subject,
                 "error": None,
@@ -353,62 +353,32 @@ def send_via_resend(
                 "idempotent_replay": False
             }
         elif response.status_code == 403 and "You can only send testing emails to your own email address" in response.text:
-            # Resend Free Sandbox restriction: only delivers to verified developer email
+            # Resend Free Sandbox restriction: unverified recipient rejected by provider
             match = re.search(r'\(([^)]+@[^)]+)\)', response.text)
             sandbox_email = match.group(1).strip() if match else "avinaashsri2006@gmail.com"
-            logger.info(f"Resend Sandbox Mode: Rerouting parent alert for {to_email} to verified developer email {sandbox_email}")
-
-            sandbox_banner = f"""
-            <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; border-left: 4px solid #3b82f6; padding: 12px; margin-bottom: 16px; border-radius: 4px; font-family: sans-serif; font-size: 13px; color: #1e40af;">
-                <strong>[Resend Sandbox Test Mode]</strong><br>
-                This attendance warning notice was originally addressed to parent: <strong><code>{to_email}</code></strong>.<br>
-                Because Resend Free Sandbox only delivers to your verified account, it was safely routed to your developer address: <strong><code>{sandbox_email}</code></strong>.
-            </div>
-            """
-            rerouted_html = sandbox_banner + html_content
-            rerouted_text = f"[Resend Sandbox Mode: Originally addressed to parent {to_email}]\n\n" + text_content
-
-            rerouted_payload = {
-                "from": sender,
-                "to": [sandbox_email],
-                "subject": f"[Parent Alert] {subject}",
-                "html": rerouted_html,
-                "text": rerouted_text
-            }
-
-            retry_res = httpx.post(
-                "https://api.resend.com/emails",
-                headers={
-                    "Authorization": f"Bearer {effective_key}",
-                    "Content-Type": "application/json"
-                },
-                json=rerouted_payload,
-                timeout=15.0
+            err_msg = (
+                f"Resend Sandbox Restriction: Recipient '{to_email}' cannot receive emails under Resend Free tier. "
+                f"Only the registered developer address ('{sandbox_email}') is permitted until a custom domain is verified on Resend."
             )
-            if retry_res.status_code in (200, 201):
-                res_data = retry_res.json()
-                email_id = res_data.get("id", "resend_sandbox_ok")
-                log_structured_email_event(
-                    event_type=event_type,
-                    recipient=sandbox_email,
-                    status="Sent",
-                    duration_ms=(time.time() - start_time) * 1000,
-                    provider_code=f"Resend Sandbox HTTP 200 ({email_id})"
-                )
-                return {
-                    "status": "Sent",
-                    "delivery_status": "Delivered via Resend Sandbox (Verified Dev Email)",
-                    "message": f"Parent alert successfully delivered to verified sandbox email {sandbox_email} (originally for {to_email})",
-                    "preview": rerouted_html,
-                    "subject": subject,
-                    "error": None,
-                    "attempts": 1,
-                    "provider_code": f"Resend {email_id}",
-                    "idempotent_replay": False
-                }
-            else:
-                logger.warning(f"Resend sandbox retry failed with {retry_res.status_code}: {retry_res.text}")
-                return None
+            logger.warning(err_msg)
+            log_structured_email_event(
+                event_type=event_type,
+                recipient=to_email,
+                status="Blocked (Sandbox)",
+                duration_ms=duration_ms,
+                error_detail=err_msg
+            )
+            return {
+                "status": "Blocked",
+                "delivery_status": "Blocked by Provider (Resend Sandbox Restriction)",
+                "message": err_msg,
+                "preview": html_content,
+                "subject": subject,
+                "error": err_msg,
+                "attempts": 1,
+                "provider_code": "Resend HTTP 403 Sandbox Restriction",
+                "idempotent_replay": False
+            }
         else:
             logger.warning(f"Resend API returned status {response.status_code}: {response.text}")
             log_structured_email_event(

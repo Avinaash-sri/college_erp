@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -93,17 +93,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount API routers
-app.include_router(auth.router)
-app.include_router(students.router)
-app.include_router(faculty.router)
-app.include_router(admin.router)
-app.include_router(chat.router)
-app.include_router(quizzes.router)
-app.include_router(assignments.router)
-app.include_router(announcements.router)
-app.include_router(notes_ai.router)
+# Mount API routers (both direct and with /api prefix for Vercel/proxy compatibility)
+api_router = APIRouter(prefix="/api")
+for r in [auth.router, students.router, faculty.router, admin.router, chat.router, quizzes.router, assignments.router, announcements.router, notes_ai.router]:
+    app.include_router(r)
+    api_router.include_router(r)
+
 app.include_router(direct_api.router)
+app.include_router(api_router)
 
 @app.get("/")
 def root():

@@ -1196,12 +1196,16 @@ export async function createAnnouncementInSupabase(announcementData) {
 export async function createNotificationInSupabase(notifData) {
   if (!isSupabaseConfigured) return null;
 
+  const validUserId = notifData.user_id !== undefined && notifData.user_id !== null && !isNaN(parseInt(notifData.user_id))
+    ? parseInt(notifData.user_id)
+    : null;
+
   const payload = {
-    user_id: parseInt(notifData.user_id),
-    title: notifData.title,
-    message: notifData.message,
+    user_id: validUserId,
+    title: notifData.title || 'Notification',
+    message: notifData.message || '',
     type: notifData.type || 'info',
-    is_read: false
+    is_read: notifData.is_read ?? false
   };
 
   const { data, error } = await supabase
@@ -1210,7 +1214,10 @@ export async function createNotificationInSupabase(notifData) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.warn('createNotificationInSupabase notice:', error.message || error);
+    return null;
+  }
   return data;
 }
 

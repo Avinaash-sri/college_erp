@@ -567,6 +567,52 @@ function notifyUpdate() {
   }
 }
 
+async function dispatchNotification(notifData) {
+  const notif = {
+    id: notifData.id || Date.now(),
+    user_id: notifData.user_id !== undefined && notifData.user_id !== null && !isNaN(parseInt(notifData.user_id))
+      ? parseInt(notifData.user_id)
+      : null,
+    title: notifData.title || 'Notification',
+    message: notifData.message || '',
+    type: notifData.type || 'info',
+    priority: notifData.priority || 'Normal',
+    target_role: notifData.target_role || 'all',
+    is_read: false,
+    is_cleared: false,
+    created_at: notifData.created_at || new Date().toISOString()
+  };
+
+  // 1. Immediately prepend to local state and save locally
+  stateNotifications = [notif, ...stateNotifications.filter((n) => n.id !== notif.id)];
+  setStored('notifications', stateNotifications);
+
+  // 2. Broadcast UI event immediately
+  notifyUpdate();
+
+  // 3. Persist to Supabase Cloud
+  if (isSupabaseConfigured) {
+    try {
+      const created = await createNotificationInSupabase({
+        user_id: notif.user_id,
+        title: notif.title,
+        message: notif.message,
+        type: notif.type,
+        is_read: false
+      });
+      if (created && created.id) {
+        notif.id = created.id;
+        setStored('notifications', stateNotifications);
+        notifyUpdate();
+      }
+    } catch (err) {
+      console.warn('dispatchNotification cloud save notice:', err.message || err);
+    }
+  }
+
+  return notif;
+}
+
 // Generate realistic, consistent period-by-period classroom attendance logs for students
 function getStudentPeriodAttendanceRecords(student) {
   const isWarning = student?.risk_status === 'Warning';
@@ -915,17 +961,53 @@ const client = {
     const queryString = (rawUrl || '').includes('?') ? rawUrl.split('?')[1] : '';
     const queryParams = new URLSearchParams(queryString);
 
-    // Helper to filter notifications targeted for current user's role
+    // Helper to filter notifications targeted for current user's role and user_id
     const currentLoggedUser = getLoggedInUser();
     const currentRole = currentLoggedUser?.role || 'student';
+    const currentUserId = currentLoggedUser?.id ? Number(currentLoggedUser.id) : null;
+    const currentStudentId = currentLoggedUser?.student_id ? Number(currentLoggedUser.student_id) : null;
+    const currentFacultyId = currentLoggedUser?.faculty_id ? Number(currentLoggedUser.faculty_id) : null;
+
     const roleFilteredNotifications = stateNotifications.filter((n) => {
       if (n.is_cleared) return false;
+
+      const notifUserId = (n.user_id !== undefined && n.user_id !== null && !isNaN(Number(n.user_id)))
+        ? Number(n.user_id)
+        : null;
       const tRole = (n.target_role || '').toLowerCase();
+
+      // If notification has a specific user_id target
+      if (notifUserId !== null) {
+        if (!currentLoggedUser) return false;
+        // Direct match with user ID
+        if (currentUserId !== null && notifUserId === currentUserId) return true;
+        // Direct match with student ID or faculty ID
+        if (currentStudentId !== null && notifUserId === currentStudentId) return true;
+        if (currentFacultyId !== null && notifUserId === currentFacultyId) return true;
+        // Check student record associated with current logged-in user
+        if (currentRole === 'student') {
+          const st = getLoggedInStudent();
+          if (st && (Number(st.user_id) === notifUserId || Number(st.id) === notifUserId)) return true;
+        } else if (currentRole === 'faculty') {
+          const fac = getLoggedInFaculty();
+          if (fac && (Number(fac.user_id) === notifUserId || Number(fac.id) === notifUserId)) return true;
+        }
+        return false;
+      }
+
+      // If notification is campus-wide or role-broadcast (user_id is null)
       if (!tRole || tRole === 'all') return true;
-      if (currentRole === 'faculty') return tRole === 'faculty' || (currentLoggedUser && n.user_id === currentLoggedUser.id);
-      if (currentRole === 'admin') return tRole === 'admin' || tRole === 'faculty';
-      // student
-      return tRole === 'student' || (currentLoggedUser && n.user_id === currentLoggedUser.id);
+      if (currentRole === 'faculty') return tRole === 'faculty';
+      if (currentRole === 'admin') return true;
+      return tRole === 'student';
+    });
+
+    roleFilteredNotifications.sort((a, b) => {
+      if (!a.is_read && b.is_read) return -1;
+      if (a.is_read && !b.is_read) return 1;
+      const dateA = new Date(a.created_at || 0).getTime();
+      const dateB = new Date(b.created_at || 0).getTime();
+      return dateB - dateA;
     });
 
     // Notifications unread count (used by Header across all roles)
@@ -2723,22 +2805,14 @@ const client = {
       setStored('leave_requests', stateLeaveRequests);
 
       // Real-time notification for Faculty
-      const facNotif = {
-        id: Date.now(),
+      await dispatchNotification({
         title: `📝 New Student Leave Request: ${st.name} (${st.reg_no})`,
         message: `${st.name} has submitted a ${newLeave.leave_type} request for ${newLeave.from_date} to ${newLeave.to_date}. Reason: ${newLeave.reason || 'Not specified'}.`,
         type: 'Leave Request',
         priority: 'High',
         target_role: 'faculty',
-        is_read: false,
-        is_cleared: false,
-        created_at: new Date().toISOString()
-      };
-      stateNotifications = [facNotif, ...stateNotifications];
-      setStored('notifications', stateNotifications);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('notification-updated'));
-      }
+        user_id: 64 // Faculty Dr. Kavitha Raman
+      });
 
       return { data: newLeave };
     }
@@ -2980,22 +3054,13 @@ const client = {
       setStored('assignments', stateAssignments);
 
       // Notify students immediately
-      const notif = {
-        id: Date.now(),
+      await dispatchNotification({
         title: `📚 Assignment Published: ${newAsgn.title}`,
         message: `New assignment published for ${newAsgn.subject_name} (${newAsgn.subject_code}). Due on ${newAsgn.due_date} at ${newAsgn.due_time}.`,
         type: 'Assignment',
         priority: 'High',
-        target_role: 'student',
-        is_read: false,
-        is_cleared: false,
-        created_at: new Date().toISOString()
-      };
-      stateNotifications = [notif, ...stateNotifications];
-      setStored('notifications', stateNotifications);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('notification-updated'));
-      }
+        target_role: 'student'
+      });
 
       return { data: newAsgn };
     }
@@ -3736,23 +3801,17 @@ const client = {
       }
 
       // Live notification for student
-      const notif = {
-        id: Date.now(),
+      const stRecord = stateStudents.find((s) => s.id === parseInt(student_id));
+      const targetUserId = stRecord?.user_id || (student_id === 101 ? 105 : student_id);
+
+      await dispatchNotification({
         title: `📊 Continuous Assessment Marks Published: ${row.subject_code}`,
         message: `Your internal marks for ${row.subject_name} have been updated. Total: ${row.total}/60 (Grade: ${row.grade}). Current CGPA: ${updatedCgpa}.`,
         type: 'Marks',
         priority: 'High',
         target_role: 'student',
-        user_id: student_id,
-        is_read: false,
-        is_cleared: false,
-        created_at: new Date().toISOString()
-      };
-      stateNotifications = [notif, ...stateNotifications];
-      setStored('notifications', stateNotifications);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('notification-updated'));
-      }
+        user_id: targetUserId
+      });
 
       return { data: { message: 'Internal marks saved and published successfully', cgpa: updatedCgpa, mark: row } };
     }
@@ -4153,23 +4212,15 @@ const client = {
       setStored('timetable_entries', stateTimetableEntries);
 
       // Notify the corresponding faculty member
-      const notif = {
-        id: Date.now(),
+      // Timetable notification for faculty
+      await dispatchNotification({
         title: `🗓️ Timetable Scheduled: ${newSlot.subject_code}`,
         message: `You have been scheduled for ${newSlot.subject_name} on ${newSlot.day || newSlot.day_of_week} (${newSlot.time}) in ${newSlot.room} (Semester ${newSlot.semester}, Section ${newSlot.section}).`,
         type: 'Timetable',
         priority: 'Normal',
         target_role: 'faculty',
-        user_id: fac.user_id || fac.id,
-        is_read: false,
-        is_cleared: false,
-        created_at: new Date().toISOString()
-      };
-      stateNotifications = [notif, ...stateNotifications];
-      setStored('notifications', stateNotifications);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('notification-updated'));
-      }
+        user_id: fac.user_id || fac.id
+      });
 
       return { data: newSlot };
     }
@@ -4227,23 +4278,15 @@ const client = {
       setStored('fees', stateFees);
 
       // Student notification
-      const notif = {
-        id: Date.now(),
+      const feeStudent = stateStudents.find((s) => s.id === parseInt(newFee.student_id));
+      await dispatchNotification({
         title: `💳 New Fee Invoiced: ${newFee.title}`,
         message: `An institutional fee invoice for ₹${total.toLocaleString()} has been generated. Due date: ${newFee.due_date}.`,
         type: 'Fee Reminder',
         priority: 'Normal',
         target_role: 'student',
-        user_id: newFee.student_id,
-        is_read: false,
-        is_cleared: false,
-        created_at: new Date().toISOString()
-      };
-      stateNotifications = [notif, ...stateNotifications];
-      setStored('notifications', stateNotifications);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('notification-updated'));
-      }
+        user_id: feeStudent?.user_id || newFee.student_id
+      });
 
       return { data: newFee };
     }
@@ -4277,22 +4320,13 @@ const client = {
       stateCalendarEvents = [newEvent, ...stateCalendarEvents];
       setStored('calendar_events', stateCalendarEvents);
 
-      const notif = {
-        id: Date.now(),
+      await dispatchNotification({
         title: `📅 Academic Event Scheduled: ${newEvent.title}`,
         message: `Academic calendar event on ${newEvent.date}: ${newEvent.description}`,
         type: 'Academic Event',
         priority: 'Normal',
-        target_role: 'All',
-        is_read: false,
-        is_cleared: false,
-        created_at: new Date().toISOString()
-      };
-      stateNotifications = [notif, ...stateNotifications];
-      setStored('notifications', stateNotifications);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('notification-updated'));
-      }
+        target_role: 'All'
+      });
 
       return { data: newEvent };
     }
@@ -4341,8 +4375,7 @@ const client = {
       setStored('announcements', stateAnnouncements);
 
       // Broadcast to both students and faculty panels
-      const notif = {
-        id: Date.now(),
+      await dispatchNotification({
         title: `📢 Circular: ${newAnn.title}`,
         message: newAnn.content,
         type: data.type || 'Circular',
@@ -4350,16 +4383,8 @@ const client = {
         target_role: targetRole.toLowerCase() === 'faculty' ? 'faculty' : (targetRole.toLowerCase() === 'student' ? 'student' : 'All'),
         poster_url: newAnn.poster_url,
         file_data: newAnn.file_data,
-        announcement: newAnn,
-        is_read: false,
-        is_cleared: false,
-        created_at: new Date().toISOString()
-      };
-      stateNotifications = [notif, ...stateNotifications];
-      setStored('notifications', stateNotifications);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('notification-updated'));
-      }
+        announcement: newAnn
+      });
 
       return { data: newAnn };
     }
@@ -4379,6 +4404,7 @@ const client = {
         notif.is_read = true;
         notif.read_at = new Date().toISOString();
         setStored('notifications', stateNotifications);
+        notifyUpdate();
         if (isSupabaseConfigured) {
           try {
             await supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
@@ -4398,6 +4424,7 @@ const client = {
       if (notif) {
         notif.is_cleared = true;
         setStored('notifications', stateNotifications);
+        notifyUpdate();
         if (isSupabaseConfigured) {
           try {
             await supabase.from('notifications').update({ is_cleared: true }).eq('id', notifId);
@@ -4410,14 +4437,23 @@ const client = {
 
     // 3. Mark all notifications as read
     if (url === '/notifications/read-all') {
+      const currentLoggedUser = getLoggedInUser();
+      const currentUserId = currentLoggedUser?.id ? Number(currentLoggedUser.id) : null;
       stateNotifications.forEach((n) => {
-        n.is_read = true;
-        n.read_at = new Date().toISOString();
+        if (!n.user_id || (currentUserId && Number(n.user_id) === currentUserId)) {
+          n.is_read = true;
+          n.read_at = new Date().toISOString();
+        }
       });
       setStored('notifications', stateNotifications);
+      notifyUpdate();
       if (isSupabaseConfigured) {
         try {
-          await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
+          if (currentUserId) {
+            await supabase.from('notifications').update({ is_read: true }).eq('user_id', currentUserId);
+          } else {
+            await supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
+          }
         } catch (e) {}
       }
       return { data: { success: true } };
@@ -4560,23 +4596,15 @@ const client = {
         setStored('fees', stateFees);
 
         // Immediate student notification
-        const notif = {
-          id: Date.now(),
+        const feeStudentRec = stateStudents.find((s) => s.id === parseInt(fee.student_id));
+        await dispatchNotification({
           title: `💳 Fee Ledger Updated: ₹${paid.toLocaleString()} Paid`,
           message: `Your payment record for ${fee.title} has been updated. Outstanding balance: ₹${pending.toLocaleString()}. Status: ${fee.status}.`,
           type: 'Fee Reminder',
           priority: fee.status === 'Paid' ? 'Normal' : 'High',
           target_role: 'student',
-          user_id: fee.student_id,
-          is_read: false,
-          is_cleared: false,
-          created_at: new Date().toISOString()
-        };
-        stateNotifications = [notif, ...stateNotifications];
-        setStored('notifications', stateNotifications);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('notification-updated'));
-        }
+          user_id: feeStudentRec?.user_id || fee.student_id
+        });
 
         return { data: fee };
       }
@@ -4727,23 +4755,15 @@ const client = {
         setStored('leave_requests', stateLeaveRequests);
 
         // Notify student immediately
-        const notif = {
-          id: Date.now(),
+        const leaveStudentRec = stateStudents.find((s) => s.id === parseInt(leave.student_id));
+        await dispatchNotification({
           title: `📄 Leave Request ${leave.status}: ${leave.leave_type}`,
           message: `Your leave request for ${leave.from_date} to ${leave.to_date} was ${leave.status.toLowerCase()} by Faculty Advisor.${remarks ? ` Remark: ${remarks}` : ''}`,
           type: 'Leave Update',
           priority: leave.status === 'Approved' ? 'Normal' : 'High',
           target_role: 'student',
-          user_id: leave.student_id,
-          is_read: false,
-          is_cleared: false,
-          created_at: new Date().toISOString()
-        };
-        stateNotifications = [notif, ...stateNotifications];
-        setStored('notifications', stateNotifications);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('notification-updated'));
-        }
+          user_id: leaveStudentRec?.user_id || leave.student_id
+        });
 
         return { data: leave };
       }
@@ -4772,23 +4792,15 @@ const client = {
         setStored('leave_requests', stateLeaveRequests);
 
         // Notify student immediately
-        const notif = {
-          id: Date.now(),
+        const leaveAdminRec = stateStudents.find((s) => s.id === parseInt(leave.student_id));
+        await dispatchNotification({
           title: `📄 Leave Request ${leave.status}: ${leave.leave_type}`,
           message: `Your leave request for ${leave.from_date} to ${leave.to_date} was ${leave.status.toLowerCase()} by Academic Office.${remarks ? ` Remark: ${remarks}` : ''}`,
           type: 'Leave Update',
           priority: leave.status === 'Approved' ? 'Normal' : 'High',
           target_role: 'student',
-          user_id: leave.student_id,
-          is_read: false,
-          is_cleared: false,
-          created_at: new Date().toISOString()
-        };
-        stateNotifications = [notif, ...stateNotifications];
-        setStored('notifications', stateNotifications);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('notification-updated'));
-        }
+          user_id: leaveAdminRec?.user_id || leave.student_id
+        });
 
         return { data: leave };
       }
@@ -4806,23 +4818,15 @@ const client = {
         setStored('document_requests', stateDocumentRequests);
 
         // Notify student immediately
-        const notif = {
-          id: Date.now(),
+        const docStudentRec = stateStudents.find((s) => s.id === parseInt(doc.student_id));
+        await dispatchNotification({
           title: `📜 Certificate Request ${doc.status}: ${doc.document_type}`,
           message: `Your request for ${doc.document_type} has been ${doc.status.toLowerCase()} by Academic Administration.${doc.admin_reply ? ` Remarks: ${doc.admin_reply}` : ''}`,
           type: 'Document Request',
           priority: doc.status === 'Approved' ? 'Normal' : 'High',
           target_role: 'student',
-          user_id: doc.student_id,
-          is_read: false,
-          is_cleared: false,
-          created_at: new Date().toISOString()
-        };
-        stateNotifications = [notif, ...stateNotifications];
-        setStored('notifications', stateNotifications);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('notification-updated'));
-        }
+          user_id: docStudentRec?.user_id || doc.student_id
+        });
 
         return { data: doc };
       }
@@ -5026,7 +5030,9 @@ export async function syncWithSupabase() {
         setStored('announcements', stateAnnouncements);
       }
       if (cloudState.notifications?.length) {
-        stateNotifications = cloudState.notifications;
+        const cloudIds = new Set(cloudState.notifications.map((n) => n.id));
+        const localOnly = (stateNotifications || []).filter((n) => !cloudIds.has(n.id));
+        stateNotifications = [...localOnly, ...cloudState.notifications];
         setStored('notifications', stateNotifications);
         notifyUpdate();
       }

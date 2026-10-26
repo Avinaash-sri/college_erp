@@ -91,6 +91,11 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
 
   const lastPoppedIdRef = React.useRef(null);
 
+  // Reset popped toast tracker when active user switches
+  useEffect(() => {
+    lastPoppedIdRef.current = null;
+  }, [user?.id, user?.email]);
+
   // Fetch unread count & notifications
   const fetchUnreadCount = () => {
     client.get('/notifications/unread-count')

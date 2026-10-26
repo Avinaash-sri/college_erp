@@ -77,10 +77,9 @@ def apply_database_migrations(engine_instance=None):
 
     # 3. Calculate and store initial CGPA for all students in DB
     try:
-        from sqlalchemy.orm import sessionmaker
+        from app.database import SessionLocal
         from app.cgpa_calculator import calculate_all_students_cgpa
-        SessionClass = sessionmaker(bind=eng)
-        session = SessionClass()
+        session = SessionLocal()
         try:
             calculate_all_students_cgpa(session)
             logger.info("Academic CGPA calculation completed for all students in database.")

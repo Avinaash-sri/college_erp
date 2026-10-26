@@ -37,10 +37,18 @@ def get_engine():
 
     if raw_db_url:
         if raw_db_url.startswith("http://") or raw_db_url.startswith("https://"):
+            if is_production:
+                raise RuntimeError(
+                    "Production configuration error: DATABASE_URL is set to a Supabase HTTP REST URL ('https://...'). "
+                    "FastAPI/SQLAlchemy requires a direct PostgreSQL connection URI format: "
+                    "'postgresql://postgres:[YOUR-DB-PASSWORD]@db.wydblgfxdxrwvxhfrjdx.supabase.co:5432/postgres' (Direct) or "
+                    "'postgresql://postgres.wydblgfxdxrwvxhfrjdx:[YOUR-DB-PASSWORD]@[POOLER-HOST]:6543/postgres?sslmode=require' (Pooler). "
+                    "Please update DATABASE_URL in Render environment variables with your Supabase PostgreSQL connection URI."
+                )
             logger.warning(
                 f"Notice: '{raw_db_url}' is a Supabase HTTP REST URL, not a direct PostgreSQL URI. "
                 "FastAPI requires PostgreSQL connection string format (postgresql://postgres:[PASSWORD]@...). "
-                "Falling back safely to local database so the service boots without crashing."
+                "Falling back safely to local database in development mode."
             )
             raw_db_url = ""
 
@@ -104,14 +112,16 @@ def get_engine():
                     raise RuntimeError(f"Database connection to MySQL failed in production mode: {e}")
                 logger.warning(f"Development mode fallback: Using local SQLite database at {settings.FALLBACK_SQLITE_URL}")
 
-    # 3. SQLite Database (Fallback when DATABASE_URL is not set)
+    # 3. SQLite Database (Only permitted in development mode when DATABASE_URL is not set)
     if is_production and not raw_db_url:
-        logger.warning(
-            "DATABASE_URL is not configured in production environment. "
-            "Falling back to local SQLite database so the FastAPI SMTP and AI API service remains online."
+        raise RuntimeError(
+            "Production configuration error: DATABASE_URL is not configured in Render environment variables. "
+            "A Supabase PostgreSQL connection URI is required in production to ensure all attendance, marks, and user actions "
+            "persist to the cloud database. Silent fallback to local SQLite in production is disabled to prevent data loss. "
+            "Please configure DATABASE_URL in your Render dashboard environment variables."
         )
 
-    logger.info(f"Initializing local SQLite database at {settings.FALLBACK_SQLITE_URL}")
+    logger.info(f"Development mode: Initializing local SQLite database at {settings.FALLBACK_SQLITE_URL}")
     return create_engine(
         settings.FALLBACK_SQLITE_URL,
         connect_args={"check_same_thread": False}

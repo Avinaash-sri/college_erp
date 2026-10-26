@@ -38,7 +38,9 @@ export default function FacultyAttendance() {
   }, [selectedSubject, date]);
 
   const fetchSessionData = (subId, dateVal, preserveFeedback = false) => {
-    setLoading(true);
+    if (students.length === 0) {
+      setLoading(true);
+    }
     if (!preserveFeedback) {
       setFeedback(null);
     }
@@ -53,7 +55,7 @@ export default function FacultyAttendance() {
       })
       .catch((err) => {
         console.error(err);
-        setStudents([]);
+        if (students.length === 0) setStudents([]);
       })
       .finally(() => setLoading(false));
   };
@@ -72,6 +74,26 @@ export default function FacultyAttendance() {
     setSaving(true);
     setFeedback(null);
     setJustSaved(false);
+
+    // Instant optimistic update on screen for ultra-responsive feel
+    const optimisticRoster = students.map((s) => {
+      const isPresent = s.status === 'Present';
+      const curAttended = s.total_attended ?? Math.round(((s.overall_attendance || 0) * 40) / 100);
+      const curConducted = s.total_conducted ?? 40;
+      const nextAttended = curAttended + (isPresent ? 1 : 0);
+      const nextConducted = curConducted + 1;
+      const nextPct = nextConducted > 0 ? Number(((nextAttended / nextConducted) * 100).toFixed(1)) : 0;
+      const risk = nextPct >= 75 ? 'Safe' : (nextPct >= 65 ? 'Warning' : 'High Risk');
+      return {
+        ...s,
+        total_attended: nextAttended,
+        total_conducted: nextConducted,
+        overall_attendance: nextPct,
+        risk_status: risk
+      };
+    });
+    setStudents(optimisticRoster);
+
     try {
       const payload = {
         subject_id: parseInt(selectedSubject),
@@ -93,8 +115,6 @@ export default function FacultyAttendance() {
         message: res.data.message || 'Attendance saved and synchronized with cloud database.',
         alerts: res.data.alerts_triggered || [],
       });
-      // Refresh session data in background while preserving feedback
-      fetchSessionData(selectedSubject, date, true);
       setTimeout(() => {
         setJustSaved(false);
       }, 3500);

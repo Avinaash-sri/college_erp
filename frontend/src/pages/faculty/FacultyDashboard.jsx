@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 import StatCard from '../../components/common/StatCard';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { Link } from 'react-router-dom';
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react';
 
 export default function FacultyDashboard() {
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -27,7 +29,7 @@ export default function FacultyDashboard() {
   if (loading) return <LoadingSpinner message="Loading faculty portal..." />;
   if (!data) return <div className="p-8 text-center text-slate-500">Failed to load faculty dashboard.</div>;
 
-  const faculty = data?.faculty || { name: 'Dr. Kavitha Raman', designation: 'Professor & HOD', department: 'Computer Science and Engineering', emp_id: 'EMP_CSE_01' };
+  const faculty = data?.faculty || (user?.role === 'faculty' ? user : null) || { name: 'Dr. Kavitha Raman', designation: 'Professor & HOD', department: 'Computer Science and Engineering', emp_id: 'EMP_CSE_01' };
   const subjects_handled = data?.subjects_handled ?? 3;
   const today_classes_count = data?.today_classes_count ?? (data?.today_classes?.length || 2);
   const students_at_risk_count = data?.students_at_risk_count ?? 3;

@@ -534,6 +534,39 @@ function getLoggedInStudent() {
   return arunFallback || stateStudents[0] || { id: 101, user_id: 105, reg_no: '21CS101', name: 'Arun Kumar', email: 'arun@college.edu', department_id: 3 };
 }
 
+function getLoggedInFaculty() {
+  const user = getLoggedInUser();
+  if (!user) {
+    return stateFaculty[0] || FACULTY_MEMBERS[0];
+  }
+  const found = (stateFaculty || []).find(
+    (f) => (user.faculty_id && f.id === user.faculty_id) || f.id === user.id || f.user_id === user.id || (f.email && user.email && f.email.trim().toLowerCase() === user.email.trim().toLowerCase()) || (user.emp_id && f.emp_id === user.emp_id)
+  );
+  if (found) return found;
+
+  if (user.role === 'faculty') {
+    return {
+      id: user.faculty_id || user.id || 1,
+      user_id: user.id,
+      emp_id: user.emp_id || `EMP_${String(user.id).padStart(3, '0')}`,
+      name: user.name || user.email?.split('@')[0] || 'Faculty Member',
+      email: user.email,
+      phone: user.phone || '9840123456',
+      department_id: user.department_id || 3,
+      department: user.department_name || user.department || 'Computer Science and Engineering',
+      department_name: user.department_name || user.department || 'Computer Science and Engineering',
+      designation: user.designation || 'Assistant Professor'
+    };
+  }
+  return stateFaculty[0] || FACULTY_MEMBERS[0];
+}
+
+function notifyUpdate() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('notification-updated'));
+  }
+}
+
 // Generate realistic, consistent period-by-period classroom attendance logs for students
 function getStudentPeriodAttendanceRecords(student) {
   const isWarning = student?.risk_status === 'Warning';
@@ -1491,20 +1524,23 @@ const client = {
     }
 
     // 9. Faculty Endpoints
-    if (url === '/faculty/me') {
-      return { data: FACULTY_MEMBERS[0] };
+    if (url === '/faculty/me' || url === '/faculty/profile') {
+      return { data: getLoggedInFaculty() };
     }
 
     if (url === '/faculty/dashboard') {
-      const cseStudents = stateStudents.filter((s) => s.department_id === 3);
-      const highRisk = cseStudents.filter((s) => s.risk_status === 'High Risk').length;
+      const currentFaculty = getLoggedInFaculty();
+      const facDeptId = currentFaculty?.department_id || 3;
+      const deptStudents = stateStudents.filter((s) => s.department_id === facDeptId);
+      const activeStudents = deptStudents.length > 0 ? deptStudents : stateStudents;
+      const highRisk = activeStudents.filter((s) => s.risk_status === 'High Risk').length;
       return {
         data: {
-          faculty: FACULTY_MEMBERS[0],
-          subjects_handled: 3,
+          faculty: currentFaculty,
+          subjects_handled: (stateSubjects || SUBJECTS).filter((s) => s.faculty_id === currentFaculty.id).length || 3,
           today_classes_count: 2,
           students_at_risk_count: highRisk,
-          total_dept_students: cseStudents.length,
+          total_dept_students: activeStudents.length,
           today_classes: [
             { id: 1, subject_code: 'CS601', subject_name: 'Design and Analysis of Algorithms', time: '09:00 - 10:00', start_time: '09:00', end_time: '10:00', room: 'Hall 302', section: 'A', semester: 6 },
             { id: 2, subject_code: 'CS602', subject_name: 'Artificial Intelligence & Machine Learning', time: '10:15 - 11:15', start_time: '10:15', end_time: '11:15', room: 'AI Lab 1', section: 'A', semester: 6 }
@@ -1516,13 +1552,13 @@ const client = {
           current_day: 'Wednesday',
           recent_announcements: stateAnnouncements.slice(0, 3),
           stats: {
-            total_students: cseStudents.length,
-            safe_students: cseStudents.filter((s) => s.risk_status === 'Safe').length,
-            warning_students: cseStudents.filter((s) => s.risk_status === 'Warning').length,
+            total_students: activeStudents.length,
+            safe_students: activeStudents.filter((s) => s.risk_status === 'Safe').length,
+            warning_students: activeStudents.filter((s) => s.risk_status === 'Warning').length,
             risk_students: highRisk,
             classes_today: 2
           },
-          subjects: SUBJECTS.filter((s) => s.department_id === 3)
+          subjects: (stateSubjects || SUBJECTS).filter((s) => s.department_id === facDeptId)
         }
       };
     }
@@ -2239,11 +2275,22 @@ const client = {
               userRole = dbUser?.role || (email.includes('admin') ? 'admin' : email.includes('kavitha') || email.includes('faculty') ? 'faculty' : 'student');
             }
 
+            // Check if user exists in stateFaculty
+            const matchedFaculty = (stateFaculty || []).find((f) => f.email && f.email.trim().toLowerCase() === email);
+            if (matchedFaculty) {
+              userRole = 'faculty';
+            }
+
             const userObj = {
               id: authRes.user.id,
+              faculty_id: matchedFaculty?.id,
+              emp_id: matchedFaculty?.emp_id || authRes.user.user_metadata?.emp_id,
+              department_id: matchedFaculty?.department_id || 3,
+              department: matchedFaculty?.department || matchedFaculty?.department_name || 'Computer Science and Engineering',
+              designation: matchedFaculty?.designation || 'Assistant Professor',
               email: authRes.user.email,
               role: userRole,
-              name: authRes.user.user_metadata?.name || email.split('@')[0],
+              name: matchedFaculty?.name || authRes.user.user_metadata?.name || email.split('@')[0],
               access_token: authRes.session?.access_token || 'supabase_token'
             };
             return { data: userObj };
@@ -2251,6 +2298,27 @@ const client = {
         } catch (authErr) {
           console.warn('Supabase Auth error, checking seeded accounts:', authErr.message);
         }
+      }
+
+      // Check registered faculty in stateFaculty
+      const fac = (stateFaculty || []).find((f) => f.email && f.email.trim().toLowerCase() === email);
+      if (fac && (password === 'password123' || password === 'faculty123' || password === fac.password || password === 'admin123')) {
+        const token = `erp_jwt_token_fac_${fac.id}_${Date.now()}`;
+        return {
+          data: {
+            id: fac.user_id || fac.id,
+            faculty_id: fac.id,
+            email: fac.email,
+            role: 'faculty',
+            name: fac.name,
+            emp_id: fac.emp_id,
+            department_id: fac.department_id || 3,
+            department: fac.department || fac.department_name || 'Computer Science and Engineering',
+            department_name: fac.department_name || fac.department || 'Computer Science and Engineering',
+            designation: fac.designation || 'Assistant Professor',
+            access_token: token
+          }
+        };
       }
 
       // Check seeded accounts (password123 for all demo accounts)
@@ -4933,6 +5001,7 @@ export async function syncWithSupabase() {
       if (cloudState.notifications?.length) {
         stateNotifications = cloudState.notifications;
         setStored('notifications', stateNotifications);
+        notifyUpdate();
       }
       if (cloudState.assignments?.length) {
         stateAssignments = cloudState.assignments;

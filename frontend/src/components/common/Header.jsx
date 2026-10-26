@@ -89,16 +89,19 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const lastPoppedIdRef = React.useRef(null);
+
   // Fetch unread count & notifications
   const fetchUnreadCount = () => {
-    if (!user) return;
     client.get('/notifications/unread-count')
-      .then((res) => setUnreadCount(res.data.unread_count || 0))
+      .then((res) => {
+        const count = res.data?.unread_count ?? 0;
+        setUnreadCount(count);
+      })
       .catch(() => {});
   };
 
   const fetchNotifications = async () => {
-    if (!user) return;
     setLoadingNotifs(true);
     try {
       const res = await client.get('/notifications/me');
@@ -112,28 +115,34 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
 
   useEffect(() => {
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 15000);
-    const handleNotificationUpdate = () => {
+    const interval = setInterval(fetchUnreadCount, 5000);
+
+    const checkAndShowToast = () => {
       fetchUnreadCount();
       if (notifDropdownOpen) fetchNotifications();
       client.get('/notifications/me')
         .then((res) => {
           const list = Array.isArray(res.data) ? res.data : [];
-          if (list.length > 0) {
-            const top = list[0];
-            const ageMs = Date.now() - new Date(top.created_at || Date.now()).getTime();
-            if (ageMs < 30000 && !top.is_read) {
+          const unread = list.filter((n) => !n.is_read && !n.is_cleared);
+          if (unread.length > 0) {
+            const top = unread[0];
+            if (lastPoppedIdRef.current !== top.id) {
+              lastPoppedIdRef.current = top.id;
               setToastNotif(top);
-              setTimeout(() => setToastNotif(null), 7000);
+              setTimeout(() => setToastNotif(null), 8000);
             }
           }
         })
         .catch(() => {});
     };
-    window.addEventListener('notification-updated', handleNotificationUpdate);
+
+    // Check toast on mount / user change
+    checkAndShowToast();
+
+    window.addEventListener('notification-updated', checkAndShowToast);
     return () => {
       clearInterval(interval);
-      window.removeEventListener('notification-updated', handleNotificationUpdate);
+      window.removeEventListener('notification-updated', checkAndShowToast);
     };
   }, [user, notifDropdownOpen]);
 

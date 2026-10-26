@@ -90,10 +90,13 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
   }, []);
 
   const lastPoppedIdRef = React.useRef(null);
+  const toastTimeoutRef = React.useRef(null);
 
   // Reset popped toast tracker when active user switches
   useEffect(() => {
     lastPoppedIdRef.current = null;
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastNotif(null);
   }, [user?.id, user?.email]);
 
   // Fetch unread count & notifications
@@ -134,7 +137,10 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
             if (lastPoppedIdRef.current !== top.id) {
               lastPoppedIdRef.current = top.id;
               setToastNotif(top);
-              setTimeout(() => setToastNotif(null), 8000);
+              if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+              toastTimeoutRef.current = setTimeout(() => {
+                setToastNotif(null);
+              }, 2000);
             }
           }
         })
@@ -147,6 +153,7 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
     window.addEventListener('notification-updated', checkAndShowToast);
     return () => {
       clearInterval(interval);
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
       window.removeEventListener('notification-updated', checkAndShowToast);
     };
   }, [user, notifDropdownOpen]);
@@ -601,13 +608,13 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
         </div>
       </div>
 
-      {/* Floating Pop Notification Banner (Student & Faculty live alerts) */}
+      {/* Floating Pop Notification Banner (Student, Faculty & Admin live alerts) */}
       {toastNotif && (
         <div
           role="alert"
-          className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 left-4 sm:left-auto z-50 max-w-sm w-auto sm:w-full bg-white rounded-2xl shadow-2xl border border-blue-200/90 p-4 transition-all duration-300 flex items-start gap-3.5 ring-1 ring-blue-500/10 backdrop-blur-md"
+          className="fixed top-16 sm:top-20 right-4 sm:right-6 z-[99999] w-[calc(100vw-2rem)] sm:w-96 max-w-md bg-white rounded-2xl shadow-2xl border border-blue-200 p-4 transition-all duration-200 flex items-start gap-3.5 ring-1 ring-blue-500/20 backdrop-blur-md pointer-events-auto animate-in fade-in slide-in-from-top-4"
         >
-          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 shadow-2xs">
+          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 shadow-xs">
             <Bell className="w-4 h-4 animate-bounce" />
           </div>
           <div className="flex-1 min-w-0">
@@ -617,7 +624,7 @@ export default function Header({ onMenuToggle, mobileMenuOpen }) {
               </span>
               <button
                 onClick={() => setToastNotif(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors"
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
                 aria-label="Dismiss notification"
               >
                 <X className="w-3.5 h-3.5" />

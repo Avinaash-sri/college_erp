@@ -2688,6 +2688,19 @@ const client = {
       });
       setStored('quizzes', stateQuizzes);
 
+      if (publish) {
+        const publishedQ = stateQuizzes.find((q) => q.id === qId);
+        if (publishedQ) {
+          await dispatchNotification({
+            title: `🏆 Quiz Results Released: ${publishedQ.title}`,
+            message: `Evaluation results and answer keys for ${publishedQ.title} (${publishedQ.subject_code}) have been verified and released.`,
+            type: 'Quiz',
+            priority: 'Normal',
+            target_role: 'student'
+          });
+        }
+      }
+
       return {
         data: {
           quiz_id: qId,
@@ -2731,6 +2744,18 @@ const client = {
       };
       stateQuizzes = [newQuiz, ...stateQuizzes];
       setStored('quizzes', stateQuizzes);
+
+      // Dispatch real-time student notification
+      if (newQuiz.status === 'published') {
+        await dispatchNotification({
+          title: `📝 New Quiz Published: ${newQuiz.title}`,
+          message: `Assessment for ${newQuiz.subject_name} (${newQuiz.subject_code}) is now active. Duration: ${newQuiz.duration_minutes} mins, Total Marks: ${newQuiz.total_marks}.`,
+          type: 'Quiz',
+          priority: 'High',
+          target_role: 'student'
+        });
+      }
+
       return { data: newQuiz };
     }
 
@@ -2747,6 +2772,20 @@ const client = {
         return q;
       });
       setStored('quizzes', stateQuizzes);
+
+      if (shouldPublish) {
+        const activeQ = stateQuizzes.find((q) => q.id === qId);
+        if (activeQ) {
+          await dispatchNotification({
+            title: `📝 New Quiz Published: ${activeQ.title}`,
+            message: `Assessment for ${activeQ.subject_name} (${activeQ.subject_code}) is now active. Duration: ${activeQ.duration_minutes} mins.`,
+            type: 'Quiz',
+            priority: 'High',
+            target_role: 'student'
+          });
+        }
+      }
+
       return {
         data: {
           quiz_id: qId,

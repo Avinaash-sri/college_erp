@@ -14,13 +14,13 @@ import {
   ListOrdered,
   Languages,
   CheckCircle2,
-  FileCheck,
   AlertCircle,
   Copy,
   Check,
   RefreshCw,
   Search,
-  ExternalLink
+  Zap,
+  BookMarked
 } from 'lucide-react';
 
 export default function AIAssistant() {
@@ -32,14 +32,14 @@ export default function AIAssistant() {
   const [erpMessages, setErpMessages] = useState([
     {
       role: 'assistant',
-      content: "Hello! I am your **AI Academic Copilot**. You can ask me anything about your classroom period attendance, absent dates, timetable, exams, fees, or any technical engineering and syllabus concepts.\n\nHow can I help you today?",
+      content: "Hello! I am your **AI Academic ERP Assistant**. You can ask me anything about your verified semester attendance, low-attendance subjects, CIA-1 & CIA-2 marks, CGPA, pending assignments, timetable, exams, fees, or course doubts.\n\nHow can I help you today?",
       suggested_questions: [
-        "Which period was I absent?",
         "What is my overall attendance?",
         "Which subjects am I below 75%?",
+        "What are my subject marks & CGPA?",
+        "Which assignments are pending?",
         "What is my timetable today?",
-        "Explain QuickSort algorithm",
-        "How do I apply for OD or Medical leave?"
+        "When is my next exam?"
       ]
     }
   ]);
@@ -92,10 +92,11 @@ export default function AIAssistant() {
         role: 'assistant',
         content: "Chat cleared. What else would you like to know about your academic records?",
         suggested_questions: [
-          "Which period was I absent?",
           "What is my overall attendance?",
+          "Which subjects am I below 75%?",
+          "What are my subject marks & CGPA?",
+          "Which assignments are pending?",
           "What is my timetable today?",
-          "Explain QuickSort algorithm",
           "When is my next exam?"
         ]
       }
@@ -110,6 +111,7 @@ export default function AIAssistant() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [summaryType, setSummaryType] = useState('quick'); // 'quick', 'detailed', 'topic_wise', 'exam_revision'
 
   // Q&A / Actions State
   const [notesActionLoading, setNotesActionLoading] = useState(false);
@@ -123,9 +125,21 @@ export default function AIAssistant() {
     try {
       setDocsLoading(true);
       const res = await client.get('/students/me/notes');
-      setDocuments(res.data || []);
-      if (res.data?.length > 0 && !selectedDocId) {
-        setSelectedDocId(res.data[0].id);
+      const docs = res.data || [];
+      setDocuments(docs);
+      if (docs.length > 0 && !selectedDocId) {
+        setSelectedDocId(docs[0].id);
+        if (docs[0].summary) {
+          setNotesHistory([
+            {
+              role: 'assistant',
+              action: `summary_${docs[0].summary_type || 'quick'}`,
+              content: docs[0].summary,
+              sources: [{ page: 1, preview: `${docs[0].filename} summary` }],
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
+          ]);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch documents:', err);
@@ -144,6 +158,24 @@ export default function AIAssistant() {
     }
   }, [notesHistory, notesActionLoading, activeTab]);
 
+  const handleSelectDocument = (doc) => {
+    setSelectedDocId(doc.id);
+    setSummaryType(doc.summary_type || 'quick');
+    if (doc.summary) {
+      setNotesHistory([
+        {
+          role: 'assistant',
+          action: `summary_${doc.summary_type || 'quick'}`,
+          content: doc.summary,
+          sources: [{ page: 1, preview: `${doc.filename} summary` }],
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+    } else {
+      setNotesHistory([]);
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -160,10 +192,21 @@ export default function AIAssistant() {
       });
       await fetchDocuments();
       setSelectedDocId(res.data.id);
-      // Auto-trigger full summary
-      handlePerformAction('summarise_full', res.data.id);
+      if (res.data.summary) {
+        setNotesHistory([
+          {
+            role: 'assistant',
+            action: 'summary_quick',
+            content: res.data.summary,
+            sources: [{ page: 1, preview: `${res.data.filename} initial summary` }],
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+      } else {
+        handleGenerateSummary('quick', res.data.id);
+      }
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Failed to upload and parse document.';
+      const msg = err.response?.data?.detail || 'Failed to upload and parse document. Supported formats: PDF, DOCX, TXT, PPTX.';
       setUploadError(msg);
     } finally {
       setUploading(false);
@@ -188,6 +231,40 @@ export default function AIAssistant() {
     }
   };
 
+  const handleGenerateSummary = async (formatType, docIdOverride = null) => {
+    const targetDocId = docIdOverride || selectedDocId;
+    if (!targetDocId) return;
+
+    setSummaryType(formatType);
+    setNotesActionLoading(true);
+
+    try {
+      const res = await client.post(`/students/me/notes/${targetDocId}/summarize`, {
+        summary_type: formatType
+      });
+
+      const responseItem = {
+        role: 'assistant',
+        action: `summary_${formatType}`,
+        content: res.data.summary,
+        sources: [{ page: 1, preview: `Format: ${formatType.replace('_', ' ').toUpperCase()}` }],
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      setNotesHistory((prev) => [...prev, responseItem]);
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === targetDocId ? { ...d, summary: res.data.summary, summary_type: formatType } : d
+        )
+      );
+    } catch (err) {
+      // Fallback to /action endpoint
+      await handlePerformAction('summarise_full', targetDocId);
+    } finally {
+      setNotesActionLoading(false);
+    }
+  };
+
   const handlePerformAction = async (actionType, docIdOverride = null, customQuery = null, customTopic = null) => {
     const targetDocId = docIdOverride || selectedDocId;
     if (!targetDocId) {
@@ -198,7 +275,6 @@ export default function AIAssistant() {
     const queryText = customQuery || (actionType === 'qa' ? notesQuery : '');
     const topicText = customTopic || '';
 
-    // Append user query if asking QA
     if (actionType === 'qa' && queryText) {
       setNotesHistory((prev) => [
         ...prev,
@@ -214,16 +290,23 @@ export default function AIAssistant() {
     setNotesActionLoading(true);
 
     try {
-      const res = await client.post(`/students/me/notes/${targetDocId}/action`, {
-        action: actionType,
-        query: queryText,
-        topic: topicText
-      });
+      let res;
+      if (actionType === 'qa') {
+        res = await client.post(`/students/me/notes/${targetDocId}/qa`, {
+          query: queryText
+        });
+      } else {
+        res = await client.post(`/students/me/notes/${targetDocId}/action`, {
+          action: actionType,
+          query: queryText,
+          topic: topicText
+        });
+      }
 
       const responseItem = {
         role: 'assistant',
         action: actionType,
-        content: res.data.result || res.data.response,
+        content: res.data.result || res.data.response || res.data.answer,
         sources: res.data.sources || [],
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
@@ -252,36 +335,99 @@ export default function AIAssistant() {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // Markdown rendering helper
+  // Markdown rendering helper with full Table, Header, Checkbox, and Quote support
   const renderMarkdown = (text) => {
     if (!text) return null;
     const lines = text.split('\n');
-    return lines.map((line, idx) => {
+    let inTable = false;
+    let tableRows = [];
+    const elements = [];
+
+    const flushTable = () => {
+      if (tableRows.length > 0) {
+        const header = tableRows[0];
+        const body = tableRows.slice(1);
+        elements.push(
+          <div key={`table-${elements.length}`} className="overflow-x-auto my-2 rounded-lg border border-slate-200">
+            <table className="min-w-full text-xs text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-100/80 border-b border-slate-200">
+                  {header.map((col, cIdx) => (
+                    <th key={cIdx} className="px-3 py-1.5 font-bold text-slate-800">{col.trim()}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {body.map((row, rIdx) => (
+                  <tr key={rIdx} className="hover:bg-slate-50/50">
+                    {row.map((cell, cIdx) => (
+                      <td key={cIdx} className="px-3 py-1.5 text-slate-700 whitespace-nowrap">
+                        {cell.trim().replace(/\*\*(.*?)\*\*/g, '$1')}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        tableRows = [];
+      }
+      inTable = false;
+    };
+
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        inTable = true;
+        if (/^\|[-:\s|]+\|$/.test(trimmed)) {
+          return;
+        }
+        const cols = trimmed.slice(1, -1).split('|');
+        tableRows.push(cols);
+        return;
+      } else if (inTable) {
+        flushTable();
+      }
+
       if (line.startsWith('#### ')) {
-        return <h5 key={idx} className="font-bold text-slate-800 text-[11px] mt-2.5 mb-1 uppercase tracking-wider">{line.slice(5)}</h5>;
+        elements.push(<h5 key={idx} className="font-bold text-slate-800 text-[11px] mt-2.5 mb-1 uppercase tracking-wider">{line.slice(5)}</h5>);
+        return;
       }
       if (line.startsWith('### ')) {
-        return <h4 key={idx} className="font-bold text-slate-900 text-xs mt-3 mb-1">{line.slice(4)}</h4>;
+        elements.push(<h4 key={idx} className="font-bold text-slate-900 text-xs mt-3 mb-1">{line.slice(4)}</h4>);
+        return;
       }
       if (line.startsWith('## ')) {
-        return <h3 key={idx} className="font-bold text-slate-900 text-sm mt-3 mb-1">{line.slice(3)}</h3>;
+        elements.push(<h3 key={idx} className="font-bold text-slate-900 text-sm mt-3 mb-1">{line.slice(3)}</h3>);
+        return;
       }
       if (line.startsWith('# ')) {
-        return <h2 key={idx} className="font-bold text-slate-900 text-base mt-3 mb-1.5">{line.slice(2)}</h2>;
+        elements.push(<h2 key={idx} className="font-bold text-slate-900 text-base mt-3 mb-1.5">{line.slice(2)}</h2>);
+        return;
       }
       if (line.startsWith('- [ ] ') || line.startsWith('- [x] ')) {
         const checked = line.startsWith('- [x] ');
         const label = line.slice(6);
-        return (
+        elements.push(
           <label key={idx} className="flex items-start space-x-2 my-1 text-slate-700 text-xs cursor-pointer">
             <input type="checkbox" defaultChecked={checked} className="mt-0.5 rounded text-blue-600 focus:ring-blue-500" />
             <span>{label}</span>
           </label>
         );
+        return;
+      }
+      if (line.startsWith('> ')) {
+        elements.push(
+          <blockquote key={idx} className="border-l-2 border-blue-500 pl-2.5 my-1.5 text-xs italic text-slate-600 bg-blue-50/30 py-1 rounded-r">
+            {line.slice(2)}
+          </blockquote>
+        );
+        return;
       }
 
       const parts = line.split(/(\*\*.*?\*\*)/g);
-      return (
+      elements.push(
         <p key={idx} className={line.startsWith('- ') ? 'ml-3 my-0.5 text-slate-700' : 'my-1 text-slate-700'}>
           {parts.map((part, pIdx) => {
             if (part.startsWith('**') && part.endsWith('**')) {
@@ -292,6 +438,9 @@ export default function AIAssistant() {
         </p>
       );
     });
+
+    if (inTable) flushTable();
+    return elements;
   };
 
   const selectedDocument = documents.find((d) => d.id === selectedDocId);
@@ -302,14 +451,14 @@ export default function AIAssistant() {
       <div className="bg-white rounded-t-xl border border-slate-200 px-4 pt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="flex items-center space-x-2">
-            <h1 className="text-base font-bold text-slate-900">Notes</h1>
+            <h1 className="text-base font-bold text-slate-900">Notes &amp; AI Intelligence</h1>
             <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-200 flex items-center space-x-1">
               <Sparkles className="w-2.5 h-2.5 text-blue-500" />
               <span>Grounded Knowledge</span>
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Study-note documents, AI summarization, key concepts, revision points, and interactive Q&A
+            Student-specific ERP queries, verified institutional records, and multi-format lecture notes summarizer
           </p>
         </div>
 
@@ -317,7 +466,7 @@ export default function AIAssistant() {
         <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
           <button
             onClick={() => setActiveTab('notes')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'notes'
                 ? 'bg-white text-blue-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -329,7 +478,7 @@ export default function AIAssistant() {
 
           <button
             onClick={() => setActiveTab('erp')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'erp'
                 ? 'bg-white text-blue-700 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -342,7 +491,7 @@ export default function AIAssistant() {
       </div>
 
       {/* ====================================================================== */}
-      {/* TAB 1: AI STUDENT NOTES ASSISTANT */}
+      {/* TAB 1: AI STUDENT NOTES SUMMARIZER */}
       {/* ====================================================================== */}
       {activeTab === 'notes' && (
         <div className="flex-1 flex flex-col sm:flex-row border-x border-b border-slate-200 bg-white rounded-b-xl overflow-hidden">
@@ -352,7 +501,7 @@ export default function AIAssistant() {
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 flex items-center justify-between">
                   <span>My Notes Documents</span>
-                  <span className="text-[10px] font-normal text-slate-400">PDF, DOCX, TXT</span>
+                  <span className="text-[10px] font-normal text-slate-400">PDF, DOCX, TXT, PPTX</span>
                 </h3>
 
                 {/* Upload Trigger */}
@@ -360,14 +509,14 @@ export default function AIAssistant() {
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileUpload}
-                  accept=".pdf,.docx,.doc,.txt,.md"
+                  accept=".pdf,.docx,.doc,.txt,.md,.pptx,.ppt"
                   className="hidden"
                 />
 
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
-                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/50 text-blue-700 text-xs font-semibold transition-all shadow-2xs disabled:opacity-50"
+                  className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-100/50 text-blue-700 text-xs font-semibold transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
                 >
                   <Upload className="w-4 h-4 shrink-0" />
                   <span>{uploading ? 'Extracting Text & Chunking...' : 'Upload Notes Document'}</span>
@@ -385,7 +534,7 @@ export default function AIAssistant() {
               <div className="space-y-1.5 max-h-56 sm:max-h-80 overflow-y-auto pr-1">
                 {documents.length === 0 ? (
                   <div className="p-4 text-center text-slate-400 text-xs bg-white rounded-xl border border-slate-200">
-                    No documents uploaded yet. Upload lecture notes, syllabus or revision slides to begin.
+                    No documents uploaded yet. Upload lecture notes (PDF, DOCX, TXT, PPTX) to begin.
                   </div>
                 ) : (
                   documents.map((doc) => {
@@ -393,7 +542,7 @@ export default function AIAssistant() {
                     return (
                       <div
                         key={doc.id}
-                        onClick={() => setSelectedDocId(doc.id)}
+                        onClick={() => handleSelectDocument(doc)}
                         className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-2 ${
                           isSelected
                             ? 'bg-blue-50/80 border-blue-300 text-blue-900 shadow-2xs font-semibold'
@@ -405,7 +554,7 @@ export default function AIAssistant() {
                           <div className="min-w-0">
                             <p className="truncate text-xs font-medium">{doc.filename}</p>
                             <p className="text-[10px] text-slate-400 font-normal">
-                              {doc.file_type.toUpperCase()} &bull; {doc.total_chunks} chunks &bull; {(doc.file_size / 1024).toFixed(0)} KB
+                              {doc.file_type.toUpperCase()} &bull; {doc.total_chunks || 1} sections &bull; {(doc.file_size / 1024).toFixed(0)} KB
                             </p>
                           </div>
                         </div>
@@ -428,35 +577,34 @@ export default function AIAssistant() {
             {selectedDocument && (
               <div className="pt-3 border-t border-slate-200 space-y-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Quick AI Prompts
+                  Quick AI Actions
                 </span>
                 <button
-                  onClick={() => handlePerformAction('summarise_full')}
+                  onClick={() => handlePerformAction('explain_english')}
                   disabled={notesActionLoading}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-[11px] font-medium text-slate-700 transition-colors flex items-center justify-between"
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-[11px] font-medium text-slate-700 transition-colors flex items-center justify-between cursor-pointer"
                 >
                   <span className="flex items-center space-x-1.5">
                     <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Full Document Summary</span>
+                    <span>Explain in Plain English</span>
                   </span>
                 </button>
 
                 <button
                   onClick={() => handlePerformAction('explain_tanglish')}
                   disabled={notesActionLoading}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-[11px] font-medium text-blue-900 transition-colors flex items-center justify-between"
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-[11px] font-medium text-blue-900 transition-colors flex items-center justify-between cursor-pointer"
                 >
                   <span className="flex items-center space-x-1.5">
                     <Languages className="w-3.5 h-3.5 text-blue-600" />
                     <span>Explain in Tanglish</span>
                   </span>
-                  <span className="text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded font-bold">New</span>
                 </button>
 
                 <button
                   onClick={() => handlePerformAction('generate_mcqs')}
                   disabled={notesActionLoading}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/50 text-[11px] font-medium text-slate-700 transition-colors flex items-center space-x-1.5"
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/50 text-[11px] font-medium text-slate-700 transition-colors flex items-center space-x-1.5 cursor-pointer"
                 >
                   <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
                   <span>Generate Practice MCQs</span>
@@ -465,7 +613,7 @@ export default function AIAssistant() {
                 <button
                   onClick={() => handlePerformAction('revision_checklist')}
                   disabled={notesActionLoading}
-                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 text-[11px] font-medium text-slate-700 transition-colors flex items-center space-x-1.5"
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-amber-400 hover:bg-amber-50/50 text-[11px] font-medium text-slate-700 transition-colors flex items-center space-x-1.5 cursor-pointer"
                 >
                   <ListOrdered className="w-3.5 h-3.5 text-amber-600" />
                   <span>Exam Revision Checklist</span>
@@ -474,26 +622,57 @@ export default function AIAssistant() {
             )}
           </div>
 
-          {/* Right Main Panel: AI Results & Grounded Chat */}
+          {/* Right Main Panel: Summary Format Selection & Grounded Chat */}
           <div className="flex-1 flex flex-col justify-between overflow-hidden bg-white">
             {/* Active Document Header / Status */}
             {selectedDocument ? (
-              <div className="p-3 border-b border-slate-200 bg-slate-50/60 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-semibold text-slate-900">Active Document:</span>
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800">
-                    {selectedDocument.filename}
-                  </span>
+              <div>
+                <div className="p-3 border-b border-slate-200 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-semibold text-slate-900">Active Document:</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800">
+                      {selectedDocument.filename}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-1 text-[11px] text-slate-500">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Grounded in {selectedDocument.total_chunks || 1} sections</span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-1 text-[11px] text-slate-500">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Grounded in {selectedDocument.total_chunks || 12} extracted sections</span>
+
+                {/* 4 Selectable Summary Modes Bar */}
+                <div className="flex flex-wrap items-center gap-1.5 p-2 bg-slate-100/70 border-b border-slate-200">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1 flex items-center space-x-1">
+                    <Zap className="w-3 h-3 text-blue-600" />
+                    <span>Summary Mode:</span>
+                  </span>
+                  {[
+                    { id: 'quick', label: 'Quick Summary', icon: '⚡' },
+                    { id: 'detailed', label: 'Detailed Summary', icon: '📖' },
+                    { id: 'topic_wise', label: 'Topic-wise Summary', icon: '📑' },
+                    { id: 'exam_revision', label: 'Exam Revision Notes', icon: '🎯' }
+                  ].map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => handleGenerateSummary(mode.id)}
+                      disabled={notesActionLoading}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50 ${
+                        summaryType === mode.id
+                          ? 'bg-blue-700 text-white shadow-xs'
+                          : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
+                      }`}
+                    >
+                      <span>{mode.icon}</span>
+                      <span>{mode.label}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
             ) : (
               <div className="p-3 border-b border-slate-200 bg-amber-50/60 text-xs text-amber-800 flex items-center space-x-2">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>Upload a document to unlock grounded AI summarisation, Tanglish explanations, and Q&amp;A.</span>
+                <span>Upload a document (PDF, DOCX, TXT, PPTX) to unlock grounded AI summarization and Q&amp;A.</span>
               </div>
             )}
 
@@ -504,20 +683,22 @@ export default function AIAssistant() {
                   <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                   <h4 className="text-sm font-bold text-slate-700">AI Student Notes Workspace Ready</h4>
                   <p className="text-xs text-slate-500 mt-1">
-                    Select an action from the left sidebar or type a specific question about your lecture notes below.
+                    Choose one of the 4 summary formats above or ask any question about your lecture notes below.
                   </p>
                   <div className="mt-4 flex flex-wrap justify-center gap-2">
                     <button
-                      onClick={() => handlePerformAction('explain_english')}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs text-slate-700 shadow-2xs font-medium"
+                      onClick={() => handleGenerateSummary('quick')}
+                      disabled={!selectedDocument}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs text-slate-700 shadow-2xs font-medium cursor-pointer"
                     >
-                      Explain in Simple English
+                      ⚡ Quick Summary
                     </button>
                     <button
-                      onClick={() => handlePerformAction('key_concepts')}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs text-slate-700 shadow-2xs font-medium"
+                      onClick={() => handleGenerateSummary('exam_revision')}
+                      disabled={!selectedDocument}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs text-slate-700 shadow-2xs font-medium cursor-pointer"
                     >
-                      Key Revision Concepts
+                      🎯 Exam Revision Notes
                     </button>
                   </div>
                 </div>
@@ -533,7 +714,7 @@ export default function AIAssistant() {
                       )}
 
                       <div
-                        className={`max-w-[90%] sm:max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed ${
+                        className={`max-w-[90%] sm:max-w-[85%] rounded-2xl p-4 text-xs leading-relaxed ${
                           isUser
                             ? 'bg-blue-700 text-white rounded-br-none shadow-xs'
                             : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-none shadow-2xs'
@@ -547,12 +728,12 @@ export default function AIAssistant() {
                             <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200/80">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center space-x-1">
                                 <Sparkles className="w-3 h-3 text-blue-600" />
-                                <span>Action: {item.action?.replace('_', ' ')}</span>
+                                <span>Output: {item.action?.replace('_', ' ')}</span>
                               </span>
 
                               <button
                                 onClick={() => copyToClipboard(item.content, idx)}
-                                className="text-slate-400 hover:text-slate-700 p-1 rounded"
+                                className="text-slate-400 hover:text-slate-700 p-1 rounded cursor-pointer"
                                 title="Copy response"
                               >
                                 {copiedIndex === idx ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -562,7 +743,7 @@ export default function AIAssistant() {
                             {/* Rendered Markdown */}
                             <div className="prose-xs">{renderMarkdown(item.content)}</div>
 
-                            {/* Page Citations */}
+                            {/* Page / Slide Citations */}
                             {item.sources && item.sources.length > 0 && (
                               <div className="mt-3 pt-3 border-t border-slate-200">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
@@ -575,7 +756,7 @@ export default function AIAssistant() {
                                       className="px-2 py-0.5 rounded-full text-[10px] bg-white border border-slate-200 text-slate-600"
                                       title={s.preview}
                                     >
-                                      Page {s.page}
+                                      Page/Slide {s.page}
                                     </span>
                                   ))}
                                 </div>
@@ -606,7 +787,7 @@ export default function AIAssistant() {
                       <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.2s]"></div>
                       <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.4s]"></div>
                     </div>
-                    <span>Analyzing notes and generating grounded answer...</span>
+                    <span>Processing uploaded document and grounding content...</span>
                   </div>
                 </div>
               )}
@@ -614,7 +795,7 @@ export default function AIAssistant() {
               <div ref={notesEndRef} />
             </div>
 
-            {/* Input Bar for Grounded Q&A */}
+            {/* Input Bar for Document Q&A */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -631,7 +812,7 @@ export default function AIAssistant() {
                 placeholder={
                   selectedDocument
                     ? `Ask anything about '${selectedDocument.filename}'...`
-                    : 'Upload or select a document above to ask questions...'
+                    : 'Upload or select a document to ask questions...'
                 }
                 disabled={!selectedDocument || notesActionLoading}
                 className="flex-1 rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50"
@@ -640,7 +821,7 @@ export default function AIAssistant() {
               <button
                 type="submit"
                 disabled={!selectedDocument || !notesQuery.trim() || notesActionLoading}
-                className="px-4 py-2.5 rounded-xl bg-blue-700 text-white hover:bg-blue-800 transition-colors disabled:opacity-50 flex items-center space-x-1.5 text-xs font-semibold shadow-xs"
+                className="px-4 py-2.5 rounded-xl bg-blue-700 text-white hover:bg-blue-800 transition-colors disabled:opacity-50 flex items-center space-x-1.5 text-xs font-semibold shadow-xs cursor-pointer"
               >
                 <span>Ask Notes</span>
                 <Send className="w-3.5 h-3.5" />
@@ -651,7 +832,7 @@ export default function AIAssistant() {
       )}
 
       {/* ====================================================================== */}
-      {/* TAB 2: ERP ACADEMIC ADVISOR (EXISTING NATURAL LANGUAGE ASSISTANT) */}
+      {/* TAB 2: ERP ACADEMIC ADVISOR (STUDENT-SPECIFIC RAG ASSISTANT) */}
       {/* ====================================================================== */}
       {activeTab === 'erp' && (
         <div className="flex-1 flex flex-col border-x border-b border-slate-200 bg-white rounded-b-xl overflow-hidden">
@@ -660,13 +841,13 @@ export default function AIAssistant() {
             <div className="flex items-center space-x-2">
               <span className="text-xs font-semibold text-slate-900">ERP Context:</span>
               <span className="text-[11px] text-slate-500">
-                Connected to real-time student attendance, timetable, exam and fee records.
+                Connected to verified attendance, CIA marks, CGPA, assignments, timetable, and exam records.
               </span>
             </div>
             <button
               type="button"
               onClick={handleClearErpChat}
-              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
               title="Clear ERP chat history"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -717,7 +898,7 @@ export default function AIAssistant() {
                                 <button
                                   key={qIdx}
                                   onClick={() => handleSendErpMessage(q)}
-                                  className="text-[11px] font-medium bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50/50 px-2.5 py-1 rounded-full transition-all text-left"
+                                  className="text-[11px] font-medium bg-white text-slate-700 border border-slate-200 hover:border-blue-400 hover:text-blue-700 hover:bg-blue-50/50 px-2.5 py-1 rounded-full transition-all text-left cursor-pointer"
                                 >
                                   {q}
                                 </button>
@@ -749,7 +930,7 @@ export default function AIAssistant() {
                     <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.2s]"></div>
                     <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:0.4s]"></div>
                   </div>
-                  <span>Querying college ERP database...</span>
+                  <span>Querying verified college ERP database &amp; notes...</span>
                 </div>
               </div>
             )}
@@ -769,14 +950,14 @@ export default function AIAssistant() {
               type="text"
               value={erpInput}
               onChange={(e) => setErpInput(e.target.value)}
-              placeholder="Ask a question about your attendance, recovery, exams, fees, timetable..."
+              placeholder="Ask about your attendance, marks, pending assignments, timetable, exams..."
               className="flex-1 rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               disabled={erpLoading}
             />
             <button
               type="submit"
               disabled={erpLoading || !erpInput.trim()}
-              className="px-4 py-2.5 rounded-xl bg-blue-700 text-white hover:bg-blue-800 transition-colors disabled:opacity-50 flex items-center space-x-1 text-xs font-semibold shadow-xs"
+              className="px-4 py-2.5 rounded-xl bg-blue-700 text-white hover:bg-blue-800 transition-colors disabled:opacity-50 flex items-center space-x-1 text-xs font-semibold shadow-xs cursor-pointer"
             >
               <span>Send</span>
               <Send className="w-3.5 h-3.5" />

@@ -17,50 +17,21 @@ export default function FloatingAIAssistant() {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
 
-  // Chat State scoped to ERP records and academic assistance
-  const [messages, setMessages] = useState(() => {
-    const role = user?.role || 'student';
-    if (role === 'faculty') {
-      return [
-        {
-          role: 'assistant',
-          content: "Hello Professor! I am your **Faculty AI Assistant**. Ask me about your teaching timetable, students at risk, assignment submissions, or internal marks.",
-          suggested_questions: [
-            'What classes do I have today?',
-            'How many students are at risk in CSE?',
-            'Show assignment submission status',
-            'When is the next CIA exam?'
-          ]
-        }
-      ];
+  // Chat State strictly scoped to Student ERP records and academic assistance
+  const [messages, setMessages] = useState(() => [
+    {
+      role: 'assistant',
+      content: "Hello! I am your **College ERP Academic Assistant**. You can ask me about your live attendance, subject-wise marks, CGPA, pending assignments, timetable, exams, or syllabus concepts.",
+      suggested_questions: [
+        'What is my overall attendance?',
+        'Which subjects am I below 75%?',
+        'What are my subject marks & CGPA?',
+        'Which assignments are pending?',
+        'What is my timetable today?',
+        'When is my next exam?'
+      ]
     }
-    if (role === 'admin') {
-      return [
-        {
-          role: 'assistant',
-          content: "Hello Administrator! I am your **Institutional AI Governance Assistant**. Ask me about total enrollment, attendance compliance, SMTP alerts, or exam schedules.",
-          suggested_questions: [
-            'How many total students are enrolled?',
-            'Attendance health across college',
-            'Is SMTP email service active?',
-            'List scheduled exams'
-          ]
-        }
-      ];
-    }
-    return [
-      {
-        role: 'assistant',
-        content: "Hello! I am your **AI ERP Student Assistant**. Ask me about your real-time attendance, today's timetable, internal exam schedules, course concepts, or college procedures.",
-        suggested_questions: [
-          'What is my overall attendance?',
-          'What classes do I have today?',
-          'When is my next examination?',
-          'Do I have any pending fees?'
-        ]
-      }
-    ];
-  });
+  ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
@@ -71,8 +42,8 @@ export default function FloatingAIAssistant() {
     }
   }, [messages, isOpen, isMinimized]);
 
-  // Enforce logged-in visibility at component level
-  if (!user) return null;
+  // Strictly enforce visibility ONLY in the student panel
+  if (!user || user.role !== 'student') return null;
 
   const handleSendMessage = async (queryText) => {
     const textToSend = queryText || input;

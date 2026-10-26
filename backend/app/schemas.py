@@ -633,8 +633,24 @@ class DocumentUploadResponse(BaseModel):
     extracted_length: int
     total_chunks: int
     processing_status: str
+    summary_type: Optional[str] = "quick"
     created_at: datetime
     summary: Optional[str] = None
+    error_message: Optional[str] = None
+
+class DocumentSummaryRequest(BaseModel):
+    summary_type: str = "quick"  # 'quick', 'detailed', 'topic_wise', 'exam_revision'
+
+class DocumentQARequest(BaseModel):
+    query: str
+
+class DocumentQAResponse(BaseModel):
+    query: str
+    answer: str
+    sources: List[Dict[str, Any]] = []
+    document_id: int
+    document_name: str
+    engine: str = "Gemini Grounded Notes Engine"
 
 class DocumentActionRequest(BaseModel):
     action: str  # 'summarise_full', 'summarise_topic', 'explain_english', 'explain_tanglish', 'qa', 'generate_mcqs', 'key_concepts', 'revision_checklist'

@@ -75,6 +75,12 @@ def apply_database_migrations(engine_instance=None):
     except Exception as e:
         logger.warning(f"Marks column inspection notice: {e}")
 
+    try:
+        existing_doc_cols = [c["name"] for c in inspector.get_columns("student_documents")]
+        add_col_if_missing("student_documents", "summary_type", "VARCHAR(50) DEFAULT 'quick'", existing_doc_cols)
+    except Exception as e:
+        logger.warning(f"Student documents column inspection notice: {e}")
+
     # 3. Calculate and store initial CGPA for all students in DB
     try:
         from app.database import SessionLocal

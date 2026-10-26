@@ -1602,6 +1602,22 @@ const client = {
 
     // 8. Student Notes Documents
     if (url === '/students/me/notes') {
+      const token = localStorage.getItem('erp_token');
+      try {
+        const resp = await fetch(BACKEND_API_URL + '/api/students/me/notes', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (resp.ok) {
+          const cloudDocs = await resp.json();
+          if (Array.isArray(cloudDocs)) {
+            stateDocuments = cloudDocs;
+            setStored('documents', stateDocuments);
+            return { data: cloudDocs };
+          }
+        }
+      } catch (e) {
+        // Fallback to local documents if backend is offline
+      }
       return { data: stateDocuments };
     }
 
@@ -3106,6 +3122,25 @@ const client = {
 
     // 10. AI Document Upload & Summarization
     if (url === '/students/me/notes/upload') {
+      const token = localStorage.getItem('erp_token');
+      if (data instanceof FormData) {
+        try {
+          const resp = await fetch(BACKEND_API_URL + '/api/students/me/notes/upload', {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: data
+          });
+          if (resp.ok) {
+            const uploaded = await resp.json();
+            stateDocuments = [uploaded, ...stateDocuments.filter(d => d.id !== uploaded.id)];
+            setStored('documents', stateDocuments);
+            return { data: uploaded };
+          }
+        } catch (e) {
+          // Backend offline, fallback to client-side document parser
+        }
+      }
+
       const file = data instanceof FormData ? data.get('file') : null;
       const fileName = file ? file.name : 'Uploaded_Lecture_Notes.pdf';
       const fileType = fileName.split('.').pop().toLowerCase();
@@ -3133,6 +3168,7 @@ const client = {
         file_type: fileType,
         file_size: fileSize,
         total_chunks: chunks,
+        summary_type: 'quick',
         summary: initialSummary,
         created_at: new Date().toISOString()
       };
@@ -3142,10 +3178,84 @@ const client = {
       return { data: newDoc };
     }
 
+    // AI Document Summarize endpoint
+    if (url.startsWith('/students/me/notes/') && url.endsWith('/summarize')) {
+      const parts = url.split('/');
+      const docId = parts[parts.length - 2];
+      const token = localStorage.getItem('erp_token');
+      try {
+        const resp = await fetch(BACKEND_API_URL + `/api/students/me/notes/${docId}/summarize`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(data)
+        });
+        if (resp.ok) {
+          const resData = await resp.json();
+          const doc = stateDocuments.find((d) => String(d.id) === String(docId));
+          if (doc) {
+            doc.summary = resData.summary;
+            doc.summary_type = resData.summary_type;
+            setStored('documents', stateDocuments);
+          }
+          return { data: resData };
+        }
+      } catch (e) {}
+    }
+
+    // AI Document Q&A endpoint
+    if (url.startsWith('/students/me/notes/') && url.endsWith('/qa')) {
+      const parts = url.split('/');
+      const docId = parts[parts.length - 2];
+      const token = localStorage.getItem('erp_token');
+      try {
+        const resp = await fetch(BACKEND_API_URL + `/api/students/me/notes/${docId}/qa`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(data)
+        });
+        if (resp.ok) {
+          const resData = await resp.json();
+          return {
+            data: {
+              result: resData.answer,
+              response: resData.answer,
+              sources: resData.sources || []
+            }
+          };
+        }
+      } catch (e) {}
+    }
+
     // AI Document Action (QA, Summarize, Revision points, Tanglish, MCQs)
     if (url.startsWith('/students/me/notes/') && url.endsWith('/action')) {
       const parts = url.split('/');
       const docId = parseInt(parts[4]);
+      const token = localStorage.getItem('erp_token');
+
+      // Attempt live backend call
+      try {
+        const resp = await fetch(BACKEND_API_URL + `/api/students/me/notes/${docId}/action`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(data)
+        });
+        if (resp.ok) {
+          const resData = await resp.json();
+          return { data: resData };
+        }
+      } catch (e) {
+        // Fallback to client-side engine
+      }
+
       const doc = stateDocuments.find((d) => d.id === docId);
       const docName = doc ? doc.filename : 'Lecture Notes';
       const { action, query, topic } = data;
@@ -3260,11 +3370,40 @@ const client = {
       };
     }
 
-    // 11. AI Assistant Chat (/chat)
+    // 11. AI Assistant Chat (/chat) — Server-Side Authenticated RAG
     if (url === '/chat') {
       const user = getLoggedInUser() || {};
       const role = user.role || 'student';
       const rawMsg = data.message || '';
+      const token = localStorage.getItem('erp_token');
+
+      // Attempt live server-side authenticated RAG assistant via FastAPI backend
+      try {
+        const resp = await fetch(BACKEND_API_URL + '/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ message: rawMsg })
+        });
+        if (resp.ok) {
+          const aiData = await resp.json();
+          if (aiData.reply) {
+            return {
+              data: {
+                reply: aiData.reply,
+                engine: aiData.engine || 'Google Gemini RAG',
+                model: aiData.model || null,
+                suggested_questions: aiData.suggested_questions || []
+              }
+            };
+          }
+        }
+      } catch (e) {
+        // Backend offline or network error, fallback to streamlined deterministic answering
+      }
+
       const st = getLoggedInStudent() || {
         name: user.name || 'Student',
         reg_no: '21CS101',
@@ -3280,37 +3419,6 @@ const client = {
         parent_name: 'R. Kumar',
         parent_email: 'parent.kumar@gmail.com'
       };
-
-      // Attempt live Gemini AI answer via backend
-      try {
-        const resp = await fetch(BACKEND_API_URL + '/api/ai/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: rawMsg,
-            student_name: st.name,
-            reg_no: st.reg_no,
-            department_name: st.department || 'Computer Science and Engineering',
-            attendance_pct: st.overall_attendance,
-            risk_status: st.risk_status,
-            role: role
-          })
-        });
-        if (resp.ok) {
-          const geminiData = await resp.json();
-          if (geminiData.reply) {
-            return {
-              data: {
-                reply: geminiData.reply,
-                engine: geminiData.engine || 'Google Gemini 2.5',
-                suggested_questions: geminiData.suggested_questions || []
-              }
-            };
-          }
-        }
-      } catch (e) {
-        // Backend offline or network error, fallback to streamlined deterministic answering
-      }
 
       const result = generateComprehensiveAIAnswer(rawMsg, st, role);
 
@@ -4879,6 +4987,13 @@ const client = {
   async delete(url, config = {}) {
     if (url.startsWith('/students/me/notes/')) {
       const docId = parseInt(url.split('/').pop());
+      const token = localStorage.getItem('erp_token');
+      try {
+        await fetch(BACKEND_API_URL + `/api/students/me/notes/${docId}`, {
+          method: 'DELETE',
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+      } catch (e) {}
       stateDocuments = stateDocuments.filter((d) => d.id !== docId);
       setStored('documents', stateDocuments);
       return { data: { message: 'Document removed' } };

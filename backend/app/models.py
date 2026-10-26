@@ -548,6 +548,7 @@ class StudentDocument(Base):
     file_size = Column(Integer, nullable=False)
     extracted_text = Column(Text, nullable=False)
     summary = Column(Text, nullable=True)
+    summary_type = Column(String(50), default="quick", nullable=True)  # 'quick', 'detailed', 'topic_wise', 'exam_revision'
     processing_status = Column(String(30), default="processed")  # 'uploading', 'processing', 'processed', 'failed'
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

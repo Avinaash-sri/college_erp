@@ -142,6 +142,7 @@ export async function fetchAuthoritativeCloudState() {
       quizzesRes,
       questionsRes,
       attemptsRes,
+      quizAssignmentsRes,
       announcementsRes,
       notificationsRes,
       complaintsRes,
@@ -165,6 +166,7 @@ export async function fetchAuthoritativeCloudState() {
       supabase.from('quizzes').select('*').order('created_at', { ascending: false }),
       supabase.from('quiz_questions').select('*').order('order', { ascending: true }),
       supabase.from('quiz_attempts').select('*').order('submitted_at', { ascending: false }),
+      supabase.from('quiz_assignments').select('*'),
       supabase.from('announcements').select('*').order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').order('created_at', { ascending: false }),
       supabase.from('complaints').select('*').order('created_at', { ascending: false }),
@@ -361,6 +363,79 @@ export async function fetchAuthoritativeCloudState() {
       ? alertsRes.value.data
       : [];
 
+    const rawQuizzes = (quizzesRes.status === 'fulfilled' && Array.isArray(quizzesRes.value.data) && quizzesRes.value.data.length > 0)
+      ? quizzesRes.value.data
+      : QUIZZES;
+
+    const rawQuizQuestions = (questionsRes.status === 'fulfilled' && Array.isArray(questionsRes.value.data))
+      ? questionsRes.value.data
+      : [];
+
+    const rawQuizAssignments = (quizAssignmentsRes.status === 'fulfilled' && Array.isArray(quizAssignmentsRes.value.data))
+      ? quizAssignmentsRes.value.data
+      : [];
+
+    const rawQuizAttempts = (attemptsRes.status === 'fulfilled' && Array.isArray(attemptsRes.value.data))
+      ? attemptsRes.value.data
+      : [];
+
+    // Enrich quizzes with their nested questions, excluded students, and subject/faculty metadata
+    const enrichedQuizzes = rawQuizzes.map((q) => {
+      const sub = subjects.find((s) => s.id === q.subject_id);
+      const fac = enrichedFaculty.find((f) => f.id === q.faculty_id);
+
+      const matchedQuestions = rawQuizQuestions
+        .filter((qst) => qst.quiz_id === q.id)
+        .sort((a, b) => (a.order || 0) - (b.order || 0))
+        .map((qst) => {
+          let parsedOptions = [];
+          if (typeof qst.options === 'string') {
+            try {
+              parsedOptions = JSON.parse(qst.options);
+            } catch (e) {
+              parsedOptions = [];
+            }
+          } else if (Array.isArray(qst.options)) {
+            parsedOptions = qst.options;
+          }
+
+          return {
+            ...qst,
+            marks: parseFloat(qst.marks) || 2.5,
+            options: parsedOptions
+          };
+        });
+
+      const excludedIds = rawQuizAssignments
+        .filter((asgn) => asgn.quiz_id === q.id && asgn.is_excluded)
+        .map((asgn) => asgn.student_id);
+
+      const finalQuestions = matchedQuestions.length > 0 ? matchedQuestions : (q.questions || []);
+      const totalMarks = (finalQuestions && finalQuestions.length > 0)
+        ? finalQuestions.reduce((acc, qst) => acc + (parseFloat(qst.marks) || 0), 0)
+        : (parseFloat(q.total_marks) || 10.0);
+
+      return {
+        ...q,
+        subject_name: sub?.name || q.subject_name || 'Academic Subject',
+        subject_code: sub?.code || q.subject_code || 'SUB101',
+        faculty_name: fac?.name || q.faculty_name || 'Faculty Member',
+        total_marks: totalMarks,
+        duration_minutes: parseInt(q.duration_minutes) || 30,
+        results_published: Boolean(q.results_published),
+        status: q.status || 'published',
+        questions: finalQuestions,
+        excluded_student_ids: excludedIds.length > 0 ? excludedIds : (q.excluded_student_ids || [])
+      };
+    });
+
+    const enrichedAttempts = rawQuizAttempts.map((att) => ({
+      ...att,
+      score: parseFloat(att.score) || 0.0,
+      total_marks: parseFloat(att.total_marks) || 10.0,
+      status: att.status ? (att.status.charAt(0).toUpperCase() + att.status.slice(1).toLowerCase()) : 'Submitted'
+    }));
+
     return {
       users: rawUsers,
       students: enrichedStudents,
@@ -371,9 +446,9 @@ export async function fetchAuthoritativeCloudState() {
       marks: enrichedMarks,
       assignments: enrichedAssignments,
       submissions: submissionsRes.status === 'fulfilled' ? (submissionsRes.value.data || []) : [],
-      quizzes: quizzesRes.status === 'fulfilled' && quizzesRes.value.data?.length ? quizzesRes.value.data : QUIZZES,
-      quiz_questions: questionsRes.status === 'fulfilled' ? (questionsRes.value.data || []) : [],
-      quiz_attempts: attemptsRes.status === 'fulfilled' ? (attemptsRes.value.data || []) : [],
+      quizzes: enrichedQuizzes,
+      quiz_questions: rawQuizQuestions,
+      quiz_attempts: enrichedAttempts,
       announcements: announcementsRes.status === 'fulfilled' && announcementsRes.value.data?.length ? announcementsRes.value.data : ANNOUNCEMENTS,
       notifications: notificationsRes.status === 'fulfilled' && notificationsRes.value.data?.length ? notificationsRes.value.data : NOTIFICATIONS,
       complaints: enrichedComplaints,
@@ -1012,7 +1087,152 @@ export async function gradeAssignmentSubmissionInSupabase(submissionId, marks, f
   return data;
 }
 
-export async function createQuizAttemptInSupabase(quizId, studentId, score, totalMarks, attemptNumber = 1) {
+/**
+ * -----------------------------------------------------------------------------
+ * QUIZ PERSISTENCE & MUTATION OPERATIONS
+ * -----------------------------------------------------------------------------
+ */
+
+export async function createQuizInSupabase(quizData) {
+  if (!isSupabaseConfigured) return null;
+
+  const totalMarks = (quizData.questions || []).reduce((acc, q) => acc + (parseFloat(q.marks) || 2.5), 0) || parseFloat(quizData.total_marks) || 10.0;
+  
+  // 1. Insert into quizzes table
+  const quizPayload = {
+    title: quizData.title,
+    description: quizData.description || '',
+    subject_id: parseInt(quizData.subject_id) || 7,
+    faculty_id: parseInt(quizData.faculty_id) || 2,
+    department_id: parseInt(quizData.department_id) || 3,
+    academic_year: quizData.academic_year || '2025-2026',
+    semester: parseInt(quizData.semester) || 6,
+    section: quizData.section || 'A',
+    duration_minutes: parseInt(quizData.duration_minutes) || 30,
+    total_marks: totalMarks,
+    start_time: quizData.start_time || new Date().toISOString(),
+    deadline: quizData.deadline || new Date(Date.now() + 86400000 * 3).toISOString(),
+    status: quizData.status || 'published',
+    results_published: Boolean(quizData.results_published),
+    allow_multiple_attempts: Boolean(quizData.allow_multiple_attempts),
+    max_attempts: parseInt(quizData.max_attempts) || 1,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  const { data: createdQuiz, error: quizError } = await supabase
+    .from('quizzes')
+    .insert([quizPayload])
+    .select()
+    .single();
+
+  if (quizError) {
+    console.error('Supabase createQuizInSupabase error:', quizError);
+    throw quizError;
+  }
+
+  // 2. Insert questions into quiz_questions table
+  const questionsToInsert = (quizData.questions || []).map((q, idx) => ({
+    quiz_id: createdQuiz.id,
+    question_text: q.question_text || `Question ${idx + 1}`,
+    question_type: q.question_type || 'mcq',
+    marks: parseFloat(q.marks) || 2.5,
+    order: q.order !== undefined ? q.order : (idx + 1),
+    options: typeof q.options === 'string' ? q.options : JSON.stringify(q.options || []),
+    correct_answer: q.correct_answer || 'A',
+    explanation: q.explanation || ''
+  }));
+
+  let insertedQuestions = [];
+  if (questionsToInsert.length > 0) {
+    const { data: qData, error: qError } = await supabase
+      .from('quiz_questions')
+      .insert(questionsToInsert)
+      .select();
+
+    if (qError) {
+      console.warn('Supabase quiz_questions insert warning:', qError);
+    } else {
+      insertedQuestions = qData || [];
+    }
+  }
+
+  // 3. Insert quiz assignments if student exclusions specified
+  if (Array.isArray(quizData.excluded_student_ids) && quizData.excluded_student_ids.length > 0) {
+    const assignmentsToInsert = quizData.excluded_student_ids.map((stId) => ({
+      quiz_id: createdQuiz.id,
+      student_id: parseInt(stId),
+      is_excluded: true,
+      created_at: new Date().toISOString()
+    }));
+    try {
+      await supabase.from('quiz_assignments').insert(assignmentsToInsert);
+    } catch (e) {
+      console.warn('Supabase quiz_assignments exclusion insert notice:', e.message);
+    }
+  }
+
+  // Format questions for UI consumption
+  const formattedQuestions = insertedQuestions.map((q) => ({
+    ...q,
+    options: typeof q.options === 'string' ? (() => { try { return JSON.parse(q.options); } catch (e) { return []; } })() : (q.options || [])
+  }));
+
+  return {
+    ...createdQuiz,
+    questions: formattedQuestions.length > 0 ? formattedQuestions : (quizData.questions || []),
+    excluded_student_ids: quizData.excluded_student_ids || []
+  };
+}
+
+export async function updateQuizPublishStatusInSupabase(quizId, shouldPublish) {
+  if (!isSupabaseConfigured) return null;
+  const newStatus = shouldPublish ? 'published' : 'draft';
+  const { data, error } = await supabase
+    .from('quizzes')
+    .update({ status: newStatus, updated_at: new Date().toISOString() })
+    .eq('id', parseInt(quizId))
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function publishQuizResultsInSupabase(quizId, shouldPublish = true) {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('quizzes')
+    .update({ results_published: shouldPublish, updated_at: new Date().toISOString() })
+    .eq('id', parseInt(quizId))
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteQuizInSupabase(quizId) {
+  if (!isSupabaseConfigured) return null;
+  const targetId = parseInt(quizId);
+  try {
+    const { data: attempts } = await supabase.from('quiz_attempts').select('id').eq('quiz_id', targetId);
+    if (attempts && attempts.length > 0) {
+      const attemptIds = attempts.map((a) => a.id);
+      await supabase.from('quiz_answers').delete().in('attempt_id', attemptIds);
+    }
+  } catch (e) {}
+
+  try { await supabase.from('quiz_attempts').delete().eq('quiz_id', targetId); } catch (e) {}
+  try { await supabase.from('quiz_assignments').delete().eq('quiz_id', targetId); } catch (e) {}
+  try { await supabase.from('quiz_questions').delete().eq('quiz_id', targetId); } catch (e) {}
+
+  const { error } = await supabase.from('quizzes').delete().eq('id', targetId);
+  if (error) throw error;
+  return true;
+}
+
+export async function createQuizAttemptInSupabase(quizId, studentId, score, totalMarks, attemptNumber = 1, answers = null) {
   if (!isSupabaseConfigured) return null;
 
   let nextAttempt = attemptNumber || 1;
@@ -1045,6 +1265,24 @@ export async function createQuizAttemptInSupabase(quizId, studentId, score, tota
     .single();
 
   if (error) throw error;
+
+  // If answer map provided, save to quiz_answers table
+  if (answers && typeof answers === 'object' && data?.id) {
+    try {
+      const answerRows = Object.entries(answers).map(([qId, ansVal]) => ({
+        attempt_id: data.id,
+        question_id: parseInt(qId),
+        selected_answer: String(ansVal),
+        evaluated_at: new Date().toISOString()
+      }));
+      if (answerRows.length > 0) {
+        await supabase.from('quiz_answers').insert(answerRows);
+      }
+    } catch (ansErr) {
+      console.warn('Notice while recording quiz_answers:', ansErr.message);
+    }
+  }
+
   return data;
 }
 

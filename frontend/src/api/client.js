@@ -13,6 +13,10 @@ import {
   deleteAssignmentInSupabase,
   submitAssignmentInSupabase,
   gradeAssignmentSubmissionInSupabase,
+  createQuizInSupabase,
+  updateQuizPublishStatusInSupabase,
+  publishQuizResultsInSupabase,
+  deleteQuizInSupabase,
   createQuizAttemptInSupabase,
   createComplaintInSupabase,
   updateComplaintInSupabase,
@@ -1818,9 +1822,13 @@ const client = {
     if (url.startsWith('/faculty/quizzes/') && url.endsWith('/submissions')) {
       const qId = parseInt(url.split('/')[3]);
       const quiz = stateQuizzes.find((q) => q.id === qId);
-      const cseStudents = stateStudents.filter((s) => s.department_id === 3);
+      const eligibleStudents = stateStudents.filter((s) => {
+        if (quiz?.department_id && s.department_id !== quiz.department_id) return false;
+        if (Array.isArray(quiz?.excluded_student_ids) && quiz.excluded_student_ids.includes(s.id)) return false;
+        return true;
+      });
 
-      const roster = cseStudents.map((st) => {
+      const roster = eligibleStudents.map((st) => {
         const attempt = stateQuizAttempts.find((a) => a.quiz_id === qId && a.student_id === st.id);
         const hasSubmitted = Boolean(attempt && attempt.status === 'Submitted');
         return {
@@ -2676,7 +2684,7 @@ const client = {
 
       if (isSupabaseConfigured) {
         try {
-          await createQuizAttemptInSupabase(qId, st.id, score, quiz ? quiz.total_marks : 10.0);
+          await createQuizAttemptInSupabase(qId, st.id, score, quiz ? quiz.total_marks : 10.0, 1, answerMap);
         } catch (e) {
           console.error('Supabase quiz attempt submit error:', e);
           throw { response: { status: 400, data: { detail: e.message || 'Failed to save quiz attempt in database.' } } };
@@ -2693,8 +2701,16 @@ const client = {
     // 5. Toggle Quiz Result Release (FACULTY OPERATION)
     if (url.startsWith('/faculty/quizzes/') && url.includes('/publish-results')) {
       const qId = parseInt(url.split('/')[3]);
-      const searchParams = new URLSearchParams(url.split('?')[1]);
+      const searchParams = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
       const publish = searchParams.get('publish') === 'true';
+
+      if (isSupabaseConfigured) {
+        try {
+          await publishQuizResultsInSupabase(qId, publish);
+        } catch (e) {
+          console.warn('Supabase quiz result publish notice:', e.message);
+        }
+      }
 
       stateQuizzes = stateQuizzes.map((q) => {
         if (q.id === qId) {
@@ -2729,14 +2745,52 @@ const client = {
     // 5a. Create Faculty Quiz
     if (url === '/faculty/quizzes') {
       const sub = SUBJECTS.find((s) => s.id === parseInt(data.subject_id)) || { code: 'CS601', name: 'Design and Analysis of Algorithms' };
-      const newQuiz = {
+      const currentFac = getLoggedInFaculty();
+      const facId = currentFac?.id || 2;
+      const deptId = parseInt(data.department_id) || currentFac?.department_id || 3;
+
+      let createdQuiz = null;
+      if (isSupabaseConfigured) {
+        try {
+          createdQuiz = await createQuizInSupabase({
+            title: data.title,
+            description: data.description || '',
+            subject_id: parseInt(data.subject_id) || 7,
+            faculty_id: facId,
+            department_id: deptId,
+            semester: parseInt(data.semester) || 6,
+            section: data.section || 'All',
+            duration_minutes: parseInt(data.duration_minutes) || 30,
+            deadline: data.deadline || new Date(Date.now() + 86400000 * 3).toISOString(),
+            start_time: data.start_time || new Date().toISOString(),
+            status: data.status || 'published',
+            results_published: false,
+            allow_multiple_attempts: Boolean(data.allow_multiple_attempts),
+            max_attempts: parseInt(data.max_attempts) || 1,
+            excluded_student_ids: data.excluded_student_ids || [],
+            questions: data.questions || []
+          });
+        } catch (e) {
+          console.error('Supabase quiz creation error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to save quiz to database.' } } };
+        }
+      }
+
+      const newQuiz = createdQuiz ? {
+        ...createdQuiz,
+        subject_code: sub.code || 'CS601',
+        subject_name: sub.name || 'Core Engineering Subject',
+        faculty_name: currentFac?.name || 'Dr. Kavitha Raman'
+      } : {
         id: Date.now(),
         title: data.title,
         description: data.description || '',
         subject_id: parseInt(data.subject_id) || 7,
         subject_code: sub.code || 'CS601',
         subject_name: sub.name || 'Core Engineering Subject',
-        department_id: parseInt(data.department_id) || 1,
+        faculty_id: facId,
+        faculty_name: currentFac?.name || 'Dr. Kavitha Raman',
+        department_id: deptId,
         semester: parseInt(data.semester) || 6,
         section: data.section || 'All',
         duration_minutes: parseInt(data.duration_minutes) || 30,
@@ -2758,7 +2812,8 @@ const client = {
           explanation: q.explanation || ''
         }))
       };
-      stateQuizzes = [newQuiz, ...stateQuizzes];
+
+      stateQuizzes = [newQuiz, ...stateQuizzes.filter((q) => q.id !== newQuiz.id)];
       setStored('quizzes', stateQuizzes);
 
       // Dispatch real-time student notification
@@ -2780,6 +2835,14 @@ const client = {
       const qId = parseInt(url.split('/')[3]);
       const searchParams = new URLSearchParams(url.includes('?') ? url.split('?')[1] : '');
       const shouldPublish = searchParams.get('publish') === 'true' || searchParams.get('publish') === null;
+
+      if (isSupabaseConfigured) {
+        try {
+          await updateQuizPublishStatusInSupabase(qId, shouldPublish);
+        } catch (e) {
+          console.warn('Supabase quiz publish update notice:', e.message);
+        }
+      }
 
       stateQuizzes = stateQuizzes.map((q) => {
         if (q.id === qId) {
@@ -4582,7 +4645,95 @@ const client = {
       return { data: { success: true } };
     }
 
-    // 3. Mark all notifications as read
+    // 3. Toggle Quiz Result Release (FACULTY OPERATION)
+    if (url.startsWith('/faculty/quizzes/') && url.includes('/publish-results')) {
+      const qId = parseInt(url.split('/')[3]);
+      const searchParams = new URLSearchParams(rawUrl && rawUrl.includes('?') ? rawUrl.split('?')[1] : '');
+      const publish = searchParams.get('publish') === 'true' || data.publish === true || data.results_published === true;
+
+      if (isSupabaseConfigured) {
+        try {
+          await publishQuizResultsInSupabase(qId, publish);
+        } catch (e) {
+          console.warn('Supabase quiz result publish notice:', e.message);
+        }
+      }
+
+      stateQuizzes = stateQuizzes.map((q) => {
+        if (q.id === qId) {
+          return { ...q, results_published: publish };
+        }
+        return q;
+      });
+      setStored('quizzes', stateQuizzes);
+
+      if (publish) {
+        const publishedQ = stateQuizzes.find((q) => q.id === qId);
+        if (publishedQ) {
+          await dispatchNotification({
+            title: `🏆 Quiz Results Released: ${publishedQ.title}`,
+            message: `Evaluation results and answer keys for ${publishedQ.title} (${publishedQ.subject_code}) have been verified and released.`,
+            type: 'Quiz',
+            priority: 'Normal',
+            target_role: 'student'
+          });
+        }
+      }
+
+      return {
+        data: {
+          quiz_id: qId,
+          results_published: publish,
+          message: publish ? 'Results released to students successfully.' : 'Results unreleased and hidden from students.'
+        }
+      };
+    }
+
+    // 3b. Toggle Quiz Publish Status (Draft <-> Published)
+    if (url.startsWith('/faculty/quizzes/') && url.includes('/publish') && !url.includes('/publish-results')) {
+      const qId = parseInt(url.split('/')[3]);
+      const searchParams = new URLSearchParams(rawUrl && rawUrl.includes('?') ? rawUrl.split('?')[1] : '');
+      const shouldPublish = searchParams.get('publish') === 'true' || data.publish === true || data.status === 'published';
+
+      if (isSupabaseConfigured) {
+        try {
+          await updateQuizPublishStatusInSupabase(qId, shouldPublish);
+        } catch (e) {
+          console.warn('Supabase quiz publish update notice:', e.message);
+        }
+      }
+
+      stateQuizzes = stateQuizzes.map((q) => {
+        if (q.id === qId) {
+          return { ...q, status: shouldPublish ? 'published' : 'draft' };
+        }
+        return q;
+      });
+      setStored('quizzes', stateQuizzes);
+
+      if (shouldPublish) {
+        const activeQ = stateQuizzes.find((q) => q.id === qId);
+        if (activeQ) {
+          await dispatchNotification({
+            title: `📝 New Quiz Published: ${activeQ.title}`,
+            message: `Assessment for ${activeQ.subject_name} (${activeQ.subject_code}) is now active. Duration: ${activeQ.duration_minutes} mins.`,
+            type: 'Quiz',
+            priority: 'High',
+            target_role: 'student'
+          });
+        }
+      }
+
+      return {
+        data: {
+          quiz_id: qId,
+          status: shouldPublish ? 'published' : 'draft',
+          message: shouldPublish ? 'Quiz published successfully.' : 'Quiz saved as draft.'
+        }
+      };
+    }
+
+    // 3c. Mark all notifications as read
     if (url === '/notifications/read-all') {
       const currentLoggedUser = getLoggedInUser();
       const currentUserId = currentLoggedUser?.id ? Number(currentLoggedUser.id) : null;
@@ -5000,9 +5151,19 @@ const client = {
     }
     if (url.startsWith('/faculty/quizzes/')) {
       const qId = parseInt(url.split('/').pop());
+      if (isSupabaseConfigured) {
+        try {
+          await deleteQuizInSupabase(qId);
+        } catch (e) {
+          console.error('Supabase quiz delete error:', e);
+          throw { response: { status: 400, data: { detail: e.message || 'Failed to delete quiz from database.' } } };
+        }
+      }
       stateQuizzes = stateQuizzes.filter((q) => q.id !== qId);
+      stateQuizAttempts = stateQuizAttempts.filter((a) => a.quiz_id !== qId);
       setStored('quizzes', stateQuizzes);
-      return { data: { message: 'Quiz deleted' } };
+      setStored('quiz_attempts', stateQuizAttempts);
+      return { data: { message: 'Quiz deleted from database successfully' } };
     }
     if (url.startsWith('/faculty/study-materials/')) {
       const matId = parseInt(url.split('/').pop());

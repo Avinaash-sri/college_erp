@@ -34,7 +34,7 @@ class TestCollegeERPEndToEnd(unittest.TestCase):
         cls.faculty_headers = {"Authorization": f"Bearer {cls.faculty_token}"}
 
         # 3. Student login
-        st_res = client.post("/auth/login", json={"email": "aarav.sharma@student.edu", "password": "student123"})
+        st_res = client.post("/auth/login", json={"email": "arun@college.edu", "password": "student123"})
         assert st_res.status_code == 200, f"Student login failed: {st_res.text}"
         cls.student_token = st_res.json()["access_token"]
         cls.student_headers = {"Authorization": f"Bearer {cls.student_token}"}

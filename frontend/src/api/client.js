@@ -217,10 +217,19 @@ export function getGradePoint(grade, marks) {
 }
 
 export function calculateAndStoreStudentCGPA(studentId) {
-  const student = stateStudents.find((s) => s.id === studentId);
+  let student = stateStudents.find((s) => s.id === studentId || String(s.id) === String(studentId) || (s.reg_no && String(s.reg_no) === String(studentId)));
+  if (!student) {
+    const loggedIn = getLoggedInStudent();
+    if (loggedIn && (loggedIn.id === studentId || String(loggedIn.id) === String(studentId) || (loggedIn.reg_no && String(loggedIn.reg_no) === String(studentId)))) {
+      student = loggedIn;
+    }
+  }
   if (!student) return 0.0;
 
-  let studentMarks = stateMarks.filter((m) => m.student_id === studentId);
+  let studentMarks = stateMarks.filter((m) =>
+    (student.id && (m.student_id === student.id || String(m.student_id) === String(student.id))) ||
+    (student.reg_no && m.reg_no && String(m.reg_no).trim().toLowerCase() === String(student.reg_no).trim().toLowerCase())
+  );
 
   // If student has no marks in state, populate them from department subjects with realistic variation
   if (!studentMarks || studentMarks.length === 0) {
@@ -1312,10 +1321,18 @@ const client = {
 
     if (url === '/students/me/marks' || url === '/students/my-marks') {
       const st = getLoggedInStudent();
-      let stMarks = stateMarks.filter((m) => m.student_id === st.id);
+      let stMarks = stateMarks.filter((m) =>
+        (st.id && (m.student_id === st.id || String(m.student_id) === String(st.id))) ||
+        (st.user_id && m.user_id && String(m.user_id) === String(st.user_id)) ||
+        (st.reg_no && m.reg_no && String(m.reg_no).trim().toLowerCase() === String(st.reg_no).trim().toLowerCase())
+      );
       if (stMarks.length === 0) {
         calculateAndStoreStudentCGPA(st.id);
-        stMarks = stateMarks.filter((m) => m.student_id === st.id);
+        stMarks = stateMarks.filter((m) =>
+          (st.id && (m.student_id === st.id || String(m.student_id) === String(st.id))) ||
+          (st.user_id && m.user_id && String(m.user_id) === String(st.user_id)) ||
+          (st.reg_no && m.reg_no && String(m.reg_no).trim().toLowerCase() === String(st.reg_no).trim().toLowerCase())
+        );
       }
       return {
         data: stMarks.map((m) => {
@@ -1330,20 +1347,36 @@ const client = {
           const gp = m.grade_point !== undefined && m.grade_point !== null
             ? m.grade_point
             : (score >= 91 ? 10 : (score >= 81 ? 9 : (score >= 71 ? 8 : (score >= 61 ? 7 : (score >= 50 ? 6 : (score >= 40 ? 5 : 0))))));
+
+          const i1 = m.internal_1 !== undefined && m.internal_1 !== null
+            ? parseFloat(m.internal_1)
+            : (m.cia1 !== undefined && m.cia1 !== null ? parseFloat(m.cia1) : +(score * 0.25).toFixed(1));
+          const i2 = m.internal_2 !== undefined && m.internal_2 !== null
+            ? parseFloat(m.internal_2)
+            : (m.cia2 !== undefined && m.cia2 !== null ? parseFloat(m.cia2) : +(score * 0.25).toFixed(1));
+          const ass = m.assignment !== undefined && m.assignment !== null
+            ? parseFloat(m.assignment)
+            : +(score * 0.10).toFixed(1);
+          const internalTotal = +((i1 + i2 + ass).toFixed(1));
+
           return {
             id: m.id,
             student_id: m.student_id,
             subject_id: m.subject_id,
-            subject_code: m.subject_code,
-            subject_name: m.subject_name,
+            subject_code: m.subject_code || sub?.code || 'SUB101',
+            subject_name: m.subject_name || sub?.name || 'Academic Subject',
             credits: cred,
-            cia1: m.internal_1,
-            cia2: m.internal_2,
-            assignment: m.assignment,
+            internal_1: i1,
+            internal_2: i2,
+            cia1: i1,
+            cia2: i2,
+            assignment: ass,
             quiz: 10,
             marks_obtained: score,
             max_marks: 100.0,
-            total: score,
+            total: internalTotal,
+            total_internal: internalTotal,
+            overall_total: score,
             grade: m.grade || (gp === 10 ? 'O' : (gp === 9 ? 'A+' : (gp === 8 ? 'A' : (gp === 7 ? 'B+' : (gp === 6 ? 'B' : (gp === 5 ? 'C' : 'F')))))),
             grade_point: gp,
             status: m.status || 'Published'

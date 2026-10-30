@@ -46,4 +46,5 @@ credentials/
 backend/storage/assignments/*
 backend/app/storage/assignments/*
 storage/
+scratch/
 
